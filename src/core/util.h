@@ -15,6 +15,9 @@ uint32_t utf8_next(const char **p);
 /* a copy of s on the heap */
 char *str_dup(const char *s);
 
+/* s in capitals, for the Latin letters with or without accents (others stay as they are) */
+void utf8_upper(char *out, size_t size, const char *s);
+
 /* milliseconds since an arbitrary start */
 double now_ms(void);
 

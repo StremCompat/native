@@ -85,7 +85,7 @@ var manifest = {
   id: 'dev.addon',
   name: 'Development',
   version: '1.0.0',
-  resources: ['catalog', 'meta'],
+  resources: ['catalog', 'meta', 'stream'],
   types: ['movie', 'series'],
   idPrefixes: ['dev'],
   catalogs: [
@@ -114,6 +114,21 @@ function withEpisodes(t) {
   });
   return t;
 }
+/* sources as torrent addons name them: quality, languages, size and seeds in the text */
+var STREAMS = [
+  ['1080p', 'The.Title.2014.1080p.BluRay.x264.DDP5.1\n\ud83d\udc64 1320 \ud83d\udcbe 2.6 GB', 1320],
+  ['1080p', 'The.Title.2014.IMAX.1080p.WEB-DL.Multi.Subs\nSubs: Portuguese, English\n\ud83d\udc64 650 \ud83d\udcbe 4.2 GB', 650],
+  ['1080p', 'The.Title.2014.1080p.WEB-DL.Dual.Audio.Portuguese.English\n\ud83d\udc64 402 \ud83d\udcbe 3.1 GB', 402],
+  ['4K', 'The.Title.2014.2160p.UHD.BluRay.REMUX.DV.HDR.Atmos.7.1\n\ud83d\udc64 120 \ud83d\udcbe 61.2 GB', 120],
+  ['720p', 'The.Title.2014.720p.BluRay.x264\n\ud83d\udc64 88 \ud83d\udcbe 1.1 GB', 88]
+].map(function (s, i) {
+  return {
+    name: 'Development\n' + s[0],
+    title: s[1],
+    infoHash: ('0000000000000000000000000000000000000000' + (i + 1)).slice(-40),
+    fileIdx: 0
+  };
+});
 function catalog(type, offset) {
   var out = [];
   for (var i = 0; i < 14; i++) out.push(title(i + offset, type));
@@ -139,7 +154,8 @@ var addon = http.createServer(function (req, res) {
     res.writeHead(200, { 'Content-Type': 'image/png' });
     return res.end(pic[1] === 'poster' ? png(300, 450, color, dark) : png(1280, 720, color, dark));
   }
-  var answer = meta ? { meta: withEpisodes(title(Number(meta[2]), meta[1])) } : answers[url];
+  var streams = /^\/stream\/(movie|series)\/[^/]+\.json$/.test(url);
+  var answer = streams ? { streams: STREAMS } : meta ? { meta: withEpisodes(title(Number(meta[2]), meta[1])) } : answers[url];
   res.writeHead(answer ? 200 : 404, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify(answer || { error: 'not found' }));
 });

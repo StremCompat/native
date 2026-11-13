@@ -59,6 +59,21 @@ uint32_t utf8_next(const char **pp) {
   return c;
 }
 
+void utf8_upper(char *out, size_t size, const char *s) {
+  size_t n = 0;
+  while (*s && n + 4 < size) {
+    const char *start = s;
+    uint32_t c = utf8_next(&s);
+    if (c >= 'a' && c <= 'z') c -= 32;
+    else if (c >= 0xE0 && c <= 0xFE && c != 0xF7) c -= 32; /* à..þ, not ÷ */
+    if (c < 0x80) out[n++] = (char)c;
+    else if (c < 0x800 && s - start <= 2) out[n++] = (char)(0xC0 | (c >> 6)), out[n++] = (char)(0x80 | (c & 0x3F));
+    else
+      while (start < s) out[n++] = *start++;
+  }
+  out[n] = 0;
+}
+
 double now_ms(void) { return (double)SDL_GetPerformanceCounter() * 1000.0 / (double)SDL_GetPerformanceFrequency(); }
 
 static void sb_grow(sbuf *b, size_t extra) {

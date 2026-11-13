@@ -187,6 +187,8 @@ static void answered(const jval *answer, void *user) {
   read_page(t);
   loaded = 1;
   backdrop_set(&bg, background);
+  /* a new film opens its sources at once, as on the web */
+  if (json_bool(json_get(t, "openSources"), 0)) sources_open(want_type, want_id, want_id, name);
 }
 
 void title_open(const char *type, const char *id) {
@@ -212,7 +214,9 @@ void title_open(const char *type, const char *id) {
 
 /* ---------- keys ---------- */
 static void run_action(const action *a) {
-  (void)a; /* the sources, the player, trailers and the library are reached from here */
+  const char *kind = a->kind ? a->kind : "";
+  if (!strcmp(kind, "resume") || !strcmp(kind, "episode") || !strcmp(kind, "sources") || !strcmp(kind, "best"))
+    sources_open(want_type, want_id, a->video ? a->video : want_id, name);
 }
 
 static void move_list(int dir) {
@@ -259,6 +263,7 @@ static void key(app_key k) {
   else if (k == K_UP && zone > ZONE_BUTTONS) zone--;
   else if (k == K_OK && zone == ZONE_BUTTONS && button < nactions) run_action(&actions[button]);
   else if (k == K_OK && zone == ZONE_SEASONS) control_key();
+  else if (k == K_OK && zone == ZONE_EPISODES && shown_count()) sources_open(want_type, want_id, shown(ep_at)->id, name);
 }
 
 /* ---------- drawing ---------- */
@@ -308,16 +313,15 @@ static void draw_buttons(float y) {
     for (size_t n = 0; a->icon && n < sizeof icons / sizeof icons[0]; n++)
       if (!strcmp(a->icon, icons[n].name)) icon = (int)icons[n].id;
     float label_w = text_width(a->label ? a->label : "", 26, W_BOLD), w;
-    /* round with an icon, showing its label only while focused; the main ones always show it */
-    if (icon < 0) w = 26 + label_w + 36;
+    /* round with its icon, showing its label only while focused; the main ones play and always
+       show their label */
+    int main_button = icon < 0, with_label = main_button || focused;
+    if (main_button) w = 26 + 30 + 10 + label_w + 36;
     else w = focused ? 20 + 30 + 10 + label_w + 28 : 64;
     gfx_rect(x, y, w, 64, 32, back);
-    if (icon < 0) {
-      ui_line(a->label, x + 26, y, 64, 26, W_BOLD, fore);
-    } else {
-      ui_icon((icon_id)icon, focused ? x + 20 : x + 17, y + 17, 30, fore);
-      if (focused) ui_line(a->label, x + 60, y, 64, 26, W_BOLD, fore);
-    }
+    float ix = main_button ? x + 26 : focused ? x + 20 : x + 17;
+    ui_icon(main_button ? ICON_PLAY : (icon_id)icon, ix, y + 17, 30, fore);
+    if (with_label) ui_line(a->label, ix + 40, y, 64, 26, W_BOLD, fore);
     x += w + 12;
   }
 }

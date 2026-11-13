@@ -12,7 +12,7 @@ typedef struct {
   void (*frame)(double t, float dt);
 } screen;
 
-extern const screen home_screen, title_screen;
+extern const screen home_screen, title_screen, sources_screen;
 
 /* the first screen, with nothing to go back to */
 void app_show(const screen *s);
@@ -22,5 +22,6 @@ void app_back(void);
 
 /* screens opened on something */
 void title_open(const char *type, const char *id);
+void sources_open(const char *type, const char *id, const char *video, const char *name);
 
 #endif
