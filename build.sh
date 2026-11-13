@@ -15,7 +15,7 @@ case "$TARGET" in
     SDL="$HERE/third_party/SDL2-2.30.9/x86_64-w64-mingw32"
     OUT="$HERE/build/win"
     mkdir -p "$OUT"
-    "$ZIG" cc -target x86_64-windows-gnu $CFLAGS -I"$SDL/include/SDL2" -Dmain=SDL_main $SRC "$HERE/src/platform/desktop.c" \
+    "$ZIG" cc -target x86_64-windows-gnu $CFLAGS -I"$SDL/include/SDL2" -Dmain=SDL_main $SRC "$HERE/src/platform/desktop.c" "$HERE/src/platform/desktop_player.c" \
       "$SDL/lib/libSDL2main.a" "$SDL/lib/libSDL2.dll.a" -lws2_32 -o "$OUT/stremcompat.exe"
     cp "$SDL/bin/SDL2.dll" "$OUT/"
     rm -rf "$OUT/assets"
@@ -29,7 +29,9 @@ case "$TARGET" in
     OUT="$HERE/build/webos"
     mkdir -p "$OUT"
     "$TC/bin/arm-webos-linux-gnueabi-gcc" $CFLAGS -D_GNU_SOURCE -DIMG_BUDGET="(48u << 20)" -I"$SYSROOT/usr/include/SDL2" \
-      $SRC "$HERE/src/platform/webos.c" -Wl,--as-needed -lSDL2 -lpthread -lm -o "$OUT/stremcompat"
+      -I"$SYSROOT/usr/include/glib-2.0" -I"$SYSROOT/usr/lib/glib-2.0/include" \
+      $SRC "$HERE/src/platform/webos.c" "$HERE/src/platform/webos_player.c" \
+      -Wl,--as-needed -lSDL2 -lluna-service2 -lglib-2.0 -ldl -lpthread -lm -o "$OUT/stremcompat"
     "$TC/bin/arm-webos-linux-gnueabi-strip" "$OUT/stremcompat"
     rm -rf "$OUT/assets"
     cp -r "$HERE/assets" "$OUT/assets"
