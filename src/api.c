@@ -32,6 +32,8 @@ void api_get(const char *path, api_done done, void *user) {
   net_request(path, NULL, NET_HIGH, parse, answered, c);
 }
 
+void api_post(const char *path, const char *json) { net_request(path, json, NET_HIGH, NULL, NULL, NULL); }
+
 /* ---------- texts: two tables (the language, then English) in one lookup by hash ---------- */
 #define TEXT_SLOTS 4096
 
@@ -86,6 +88,24 @@ int api_load_strings(void) {
 const char *tx(const char *key) {
   text_slot *s = slot_for(key);
   return s && s->key ? s->text : key;
+}
+
+const char *txp(const char *key, const char *a0) {
+  static char out[512];
+  const jval *root = json_root(texts);
+  const char *text = json_str(json_get(json_get(json_get(root, "lang"), "player"), key), NULL);
+  if (!text) text = json_str(json_get(json_get(json_get(root, "fallback"), "player"), key), key);
+  size_t n = 0;
+  for (const char *p = text; *p && n < sizeof out - 1; p++) {
+    if (p[0] == '{' && p[1] == '0' && p[2] == '}' && a0) {
+      for (const char *a = a0; *a && n < sizeof out - 1; a++) out[n++] = *a;
+      p += 2;
+    } else {
+      out[n++] = *p;
+    }
+  }
+  out[n] = 0;
+  return out;
 }
 
 const char *txf(const char *key, const char *a0, const char *a1) {

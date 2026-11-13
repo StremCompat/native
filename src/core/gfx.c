@@ -143,6 +143,12 @@ static void apply_clip(void) {
   glScissor(x, y, w < 0 ? 0 : w, h < 0 ? 0 : h);
 }
 
+void gfx_clear(uint32_t c) {
+  flush();
+  glClearColor(((c >> 24) & 255) / 255.0f, ((c >> 16) & 255) / 255.0f, ((c >> 8) & 255) / 255.0f, (c & 255) / 255.0f);
+  glClear(GL_COLOR_BUFFER_BIT);
+}
+
 void gfx_begin(int w, int h, uint32_t clear) {
   surf_w = w;
   surf_h = h;

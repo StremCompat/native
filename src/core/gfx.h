@@ -21,6 +21,8 @@ typedef struct {
 int gfx_init(void);
 void gfx_begin(int surface_w, int surface_h, uint32_t clear);
 void gfx_end(void);
+/* the whole surface to one colour; a clear one lets the video plane show through */
+void gfx_clear(uint32_t color);
 
 void gfx_rect(float x, float y, float w, float h, float radius, uint32_t color);
 /* colour a at the start, b at the end; vertical runs top to bottom */

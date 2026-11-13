@@ -1,0 +1,419 @@
+/* The player: the video plays on the TV's video plane under a clear window, and this screen
+   draws its controls over it as the web player does (player.css): the title, the bar with the
+   position, the buttons, the seek steps that add up, short messages, and the cover while it
+   loads. What is watched goes to the server every few seconds (/app/progress). */
+#include <math.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "api.h"
+#include "img.h"
+#include "player.h"
+#include "screens.h"
+#include "text.h"
+#include "ui.h"
+#include "util.h"
+
+#define BAR_SHOW_MS 5000.0
+#define SEEK_COMMIT_MS 1200.0
+#define REPORT_EVERY_MS 10000.0
+#define TOAST_MS 3000.0
+#define BTN 86.0f
+#define BTN_BIG 102.0f
+
+/* the buttons, left to right; some are left out (episodes for films, next without one) */
+enum { B_MEDIA, B_EPISODES, B_SOURCES, B_REWIND, B_PLAY, B_FORWARD, B_NEXT, B_SETTINGS, B_COUNT };
+enum { MODE_VIDEO, MODE_SEEK, MODE_BUTTONS };
+
+typedef struct {
+  char *url, *title, *season_line, *logo, *background, *poster, *type, *id, *vid, *next;
+} play_info;
+
+static play_info info;
+static int gen, ready, mode, button = B_PLAY, seek_step = 10, resuming;
+static char *want_type, *want_id, *want_vid; /* what was asked, to fall back on the sources */
+static double clock_now, bar_until, seek_target = -1, seek_base = -1, seek_at, last_report, toast_until;
+static char toast[256];
+
+static char *copy(const jval *v) {
+  const char *s = json_str(v, NULL);
+  return s && *s ? str_dup(s) : NULL;
+}
+
+static void clear_info(void) {
+  char **f[] = {&info.url, &info.title, &info.season_line, &info.logo, &info.background,
+                &info.poster, &info.type, &info.id, &info.vid, &info.next};
+  for (size_t i = 0; i < sizeof f / sizeof f[0]; i++) {
+    free(*f[i]);
+    *f[i] = NULL;
+  }
+}
+
+static void show_toast(const char *text) {
+  snprintf(toast, sizeof toast, "%s", text);
+  toast_until = clock_now + TOAST_MS;
+}
+
+static int shown(int b) {
+  if (b == B_EPISODES) return info.type && !strcmp(info.type, "series");
+  if (b == B_NEXT) return info.next != NULL;
+  return 1;
+}
+
+static void format_time(char *out, size_t size, double ms) {
+  int s = ms > 0 ? (int)(ms / 1000) : 0;
+  if (s >= 3600) snprintf(out, size, "%d:%02d:%02d", s / 3600, s / 60 % 60, s % 60);
+  else snprintf(out, size, "%d:%02d", s / 60, s % 60);
+}
+
+/* ---------- what is reported to the server ---------- */
+static void report(const char *event) {
+  double d = player_duration();
+  if (!info.id || !info.type || d <= 0) return;
+  sbuf b = {0};
+  sb_add(&b, "{\"type\":");
+  sb_add_json_str(&b, info.type);
+  sb_add(&b, ",\"id\":");
+  sb_add_json_str(&b, info.id);
+  sb_add(&b, ",\"vid\":");
+  sb_add_json_str(&b, info.vid ? info.vid : info.id);
+  sb_add(&b, ",\"name\":");
+  sb_add_json_str(&b, info.title ? info.title : "");
+  sb_add(&b, ",\"poster\":");
+  sb_add_json_str(&b, info.poster ? info.poster : "");
+  sb_add(&b, ",\"background\":");
+  sb_add_json_str(&b, info.background ? info.background : "");
+  sb_add(&b, ",\"logo\":");
+  sb_add_json_str(&b, info.logo ? info.logo : "");
+  if (info.next) {
+    sb_add(&b, ",\"next\":");
+    sb_add_json_str(&b, info.next);
+  }
+  sb_addf(&b, ",\"time\":%.0f,\"duration\":%.0f,\"event\":", player_position(), d);
+  sb_add_json_str(&b, event);
+  sb_add(&b, "}");
+  api_post("/app/progress", b.s);
+  sb_free(&b);
+  last_report = clock_now;
+}
+
+/* ---------- starting ---------- */
+static void started(const jval *answer, void *user) {
+  const jval *in = json_get(answer, "info");
+  if ((intptr_t)user != gen) return;
+  if (in->type != J_OBJ || !json_str(json_get(in, "URL"), NULL)) {
+    if (resuming) {
+      /* the last source is gone from the server: choose again */
+      app_back();
+      sources_open(want_type, want_id, want_vid, NULL);
+    } else {
+      show_toast(txp("sourceFailed", NULL));
+    }
+    return;
+  }
+  clear_info();
+  info.url = copy(json_get(in, "URL"));
+  info.title = copy(json_get(in, "TITLE"));
+  info.logo = copy(json_get(in, "LOGO"));
+  info.background = copy(json_get(in, "BG"));
+  info.poster = copy(json_get(in, "POSTER"));
+  info.type = copy(json_get(in, "TYPE"));
+  info.id = copy(json_get(in, "ID"));
+  info.vid = copy(json_get(in, "VID"));
+  info.next = copy(json_get(in, "NEXTVID"));
+  const char *season = json_str(json_get(in, "SEASON"), ""), *episode = json_str(json_get(in, "EPISODE"), "");
+  if (*season && *episode) {
+    /* Season 1 · Episode 2  ·  Its title */
+    sbuf se = {0};
+    sb_addf(&se, "%s \xC2\xB7 ", txf("season", season, NULL));
+    sb_add(&se, txf("episode", episode, NULL));
+    const char *ep_title = json_str(json_get(in, "EPTITLE"), "");
+    if (*ep_title) sb_addf(&se, "  \xC2\xB7  %s", ep_title);
+    info.season_line = se.s;
+  }
+  seek_step = (int)json_num(json_get(answer, "seekStep"), 10);
+  double resume = json_num(json_get(answer, "resume"), 0);
+  player_open(info.url, resume);
+  if (resume > 0) {
+    char at[32];
+    format_time(at, sizeof at, resume);
+    char text[200];
+    snprintf(text, sizeof text, "%s%s", txp("resuming", NULL), at);
+    show_toast(text);
+  }
+  ready = 1;
+}
+
+/* opens the player on a source of a search (seq), or with seq < 0 on the last one played */
+void player_start(const char *type, const char *id, const char *vid, int seq) {
+  gen++;
+  ready = 0;
+  clear_info();
+  free(want_type);
+  free(want_id);
+  free(want_vid);
+  want_type = str_dup(type);
+  want_id = str_dup(id);
+  want_vid = str_dup(vid);
+  resuming = seq < 0;
+  mode = MODE_VIDEO;
+  button = B_PLAY;
+  seek_target = seek_base = -1;
+  bar_until = 0;
+  toast[0] = 0;
+  sbuf p = {0};
+  sb_add(&p, "/app/play?type=");
+  sb_add_url(&p, type);
+  sb_add(&p, "&id=");
+  sb_add_url(&p, id);
+  sb_add(&p, "&vid=");
+  sb_add_url(&p, vid);
+  if (seq >= 0) sb_addf(&p, "&seq=%d", seq);
+  else sb_add(&p, "&resume=1");
+  api_get(p.s, started, (void *)(intptr_t)gen);
+  sb_free(&p);
+  app_push(&player_screen);
+}
+
+static void leave(void) {
+  report("leave");
+  player_close();
+  gen++;
+  app_back();
+}
+
+/* ---------- seeking: presses add up from the first one and are done when they stop ---------- */
+static void commit_seek(void) {
+  if (seek_target < 0) return;
+  /* what played meanwhile is added back, so the jump is exactly the presses */
+  double target = seek_target + (player_position() - seek_base);
+  if (target < 0) target = 0;
+  if (target > player_duration()) target = player_duration();
+  player_seek(target);
+  report("seek");
+  seek_target = seek_base = -1;
+}
+
+static void seek_by(double seconds) {
+  if (player_duration() <= 0) return;
+  if (seek_target < 0) {
+    seek_base = player_position();
+    seek_target = seek_base;
+  }
+  seek_target += seconds * 1000;
+  if (seek_target < 0) seek_target = 0;
+  if (seek_target > player_duration()) seek_target = player_duration();
+  seek_at = clock_now;
+}
+
+static void toggle(void) {
+  if (player_status() == PLAYER_PLAYING) {
+    player_pause();
+    report("pause");
+  } else {
+    player_play();
+  }
+}
+
+static void move_button(int dir) {
+  for (int b = button + dir; b >= 0 && b < B_COUNT; b += dir)
+    if (shown(b)) {
+      button = b;
+      return;
+    }
+}
+
+static void press_button(void) {
+  if (button == B_PLAY) toggle();
+  else if (button == B_REWIND) seek_by(-seek_step);
+  else if (button == B_FORWARD) seek_by(seek_step);
+}
+
+static void key(app_key k) {
+  bar_until = clock_now + BAR_SHOW_MS;
+  if (k == K_BACK) {
+    leave();
+    return;
+  }
+  if (player_status() == PLAYER_FAILED) return;
+  if (k == K_PLAY) {
+    toggle();
+    return;
+  }
+  if (mode == MODE_BUTTONS) {
+    if (k == K_LEFT) move_button(-1);
+    else if (k == K_RIGHT) move_button(1);
+    else if (k == K_UP) mode = MODE_SEEK;
+    else if (k == K_DOWN) mode = MODE_VIDEO;
+    else if (k == K_OK) press_button();
+  } else if (mode == MODE_SEEK) {
+    if (k == K_LEFT) seek_by(-seek_step);
+    else if (k == K_RIGHT) seek_by(seek_step);
+    else if (k == K_DOWN) mode = MODE_BUTTONS;
+    else if (k == K_UP) mode = MODE_VIDEO;
+    else if (k == K_OK) commit_seek();
+  } else {
+    if (k == K_UP) mode = MODE_BUTTONS;
+    else if (k == K_DOWN) mode = MODE_SEEK;
+    else if (k == K_OK) toggle();
+    else if (k == K_LEFT) seek_by(-seek_step);
+    else if (k == K_RIGHT) seek_by(seek_step);
+  }
+}
+
+/* ---------- drawing ---------- */
+/* the title's logo, else its name, centred: shown while the video loads and while it waits */
+static void draw_cover(float alpha) {
+  const sc_tex *art = img_get(info.background, 1280, NULL);
+  gfx_rect(0, 0, SC_DESIGN_W, SC_DESIGN_H, 0, SC_RGBA(10, 10, 11, (int)(255 * alpha)));
+  if (art) gfx_image(art, 0, 0, SC_DESIGN_W, SC_DESIGN_H, 0, alpha * 0.5f, COVER);
+  const sc_tex *logo = img_get(info.logo, 640, NULL);
+  /* breathing, as the web cover does */
+  float breathe = 0.8f + 0.2f * (0.5f + 0.5f * sinf((float)(clock_now / 2800.0 * 6.2832)));
+  gfx_push_opacity(alpha * breathe);
+  if (logo) {
+    float w = 640, h = logo->h * (640.0f / logo->w);
+    if (h > 400) w *= 400 / h, h = 400;
+    gfx_image(logo, (SC_DESIGN_W - w) / 2, (SC_DESIGN_H - h) / 2, w, h, 0, 1, STRETCH);
+  } else if (info.title) {
+    float tw = text_width(info.title, 58, W_BOLD);
+    text_draw_fit(info.title, tw < 1600 ? (SC_DESIGN_W - tw) / 2 : 160, SC_DESIGN_H / 2 - 35, 1600, 58, W_BOLD, C_WHITE);
+  }
+  gfx_pop_opacity();
+}
+
+static void draw_button(int b, float x, float y, float size) {
+  int focused = mode == MODE_BUTTONS && button == b;
+  gfx_rect(x, y, size, size, size / 2, focused ? C_WHITE : C_TEXT(0.13f));
+  uint32_t c = focused ? SC_RGBA(0, 0, 0, 255) : C_WHITE;
+  static const icon_id icons[B_COUNT] = {ICON_SUBTITLES, ICON_EPISODES, ICON_SOURCES, ICON_REWIND,
+                                         ICON_PLAY,      ICON_FORWARD,  ICON_PLAY,    ICON_GEAR};
+  if (b == B_PLAY && player_status() == PLAYER_PLAYING) {
+    gfx_rect(x + size / 2 - 14, y + size / 2 - 19, 10, 38, 2, c);
+    gfx_rect(x + size / 2 + 4, y + size / 2 - 19, 10, 38, 2, c);
+  } else {
+    float s = b == B_PLAY ? 44 : 40;
+    ui_icon(icons[b], x + (size - s) / 2 + (b == B_PLAY ? 3 : 0), y + (size - s) / 2, s, c);
+  }
+  static const char *labels[B_COUNT] = {"audioSubs", "episodes", "sources", NULL, NULL, NULL, NULL, "settings"};
+  if (focused && labels[b]) {
+    const char *label = b == B_SOURCES ? tx("sources") : b == B_SETTINGS ? tx("navSettings") : txp(labels[b], NULL);
+    float lw = text_width(label, 22, W_BOLD) + 28;
+    gfx_rect(x + size / 2 - lw / 2, y - 14 - 40, lw, 40, 8, SC_RGBA(0, 0, 0, 191));
+    ui_line(label, x + size / 2 - lw / 2 + 14, y - 14 - 40, 40, 22, W_BOLD, C_WHITE);
+  }
+}
+
+static void draw_bar(void) {
+  /* #bar: a shade from the bottom, the title, the season line, the position and the buttons */
+  gfx_gradient(0, SC_DESIGN_H - 420, SC_DESIGN_W, 420, 0, SC_RGBA(0, 0, 0, 0), SC_RGBA(0, 0, 0, 235), 1);
+  float x = 52, y = SC_DESIGN_H - 40 - 104 - 20 - 26;
+  double d = player_duration(), at = seek_target >= 0 ? seek_target : player_position();
+  /* position and time on one line */
+  char now[32], total[32], left[40], times[128];
+  format_time(now, sizeof now, at);
+  format_time(total, sizeof total, d);
+  format_time(left, sizeof left, d - at);
+  snprintf(times, sizeof times, "%s / %s   -%s", now, total, left);
+  float tw = text_width(times, 26, W_REGULAR);
+  float bar_w = SC_DESIGN_W - 104 - tw - 48, frac = d > 0 ? (float)clampf((float)(at / d), 0, 1) : 0;
+  int seek_focus = mode == MODE_SEEK, seeking = seek_target >= 0;
+  float bh = seek_focus || seeking ? 12 : 8;
+  ui_line(times, x + bar_w + 48, y + 4 - 18, 36, 26, W_REGULAR, C_TEXT(0.92f));
+  if (seek_focus) gfx_outline(x - 3, y + 4 - bh / 2 - 3, bar_w + 6, bh + 6, 6, 3, C_TEXT(0.34f));
+  gfx_rect(x, y + 4 - bh / 2, bar_w, bh, 3, C_TEXT(0.22f));
+  gfx_rect(x, y + 4 - bh / 2, bar_w * frac, bh, 3, C_WHITE);
+  float knob = seek_focus ? 28 : seeking ? 26 : 18;
+  gfx_rect(x + bar_w * frac - knob / 2 - 4, y + 4 - knob / 2 - 4, knob + 8, knob + 8, knob / 2 + 4, C_TEXT(0.22f));
+  gfx_rect(x + bar_w * frac - knob / 2, y + 4 - knob / 2, knob, knob, knob / 2, C_WHITE);
+  /* the title and the season line above the bar */
+  float ty = y - 16 - 34;
+  if (info.season_line) {
+    text_draw_fit(info.season_line, x, ty - 4, 1400, 28, W_SEMIBOLD, C_TEXT(0.78f));
+    ty -= 6 + 56;
+  } else {
+    ty -= 22;
+  }
+  if (info.title) text_draw_fit(info.title, x, ty, 1400, 46, W_EXTRABOLD, C_WHITE);
+  /* the buttons: left, centre (bigger play), right */
+  float row = y + 4 + 26 + 20;
+  float bx = x;
+  for (int b = B_MEDIA; b <= B_SOURCES; b++)
+    if (shown(b)) draw_button(b, bx, row + 8, BTN), bx += BTN + 24;
+  float cx = SC_DESIGN_W / 2 - (BTN + 40 + BTN_BIG / 2);
+  draw_button(B_REWIND, cx, row + 8, BTN);
+  draw_button(B_PLAY, cx + BTN + 40, row, BTN_BIG);
+  draw_button(B_FORWARD, cx + BTN + 40 + BTN_BIG + 40, row + 8, BTN);
+  float rx = SC_DESIGN_W - 52 - BTN;
+  draw_button(B_SETTINGS, rx, row + 8, BTN);
+  if (shown(B_NEXT)) {
+    const char *label = txp("nextEpisode", NULL);
+    float w = text_width(label, 27, W_BOLD) + 80, nx = rx - 24 - w;
+    int f = mode == MODE_BUTTONS && button == B_NEXT;
+    gfx_rect(nx, row + 8, w, BTN, BTN / 2, f ? C_WHITE : C_TEXT(0.13f));
+    ui_line(label, nx + 40, row + 8, BTN, 27, W_BOLD, f ? SC_RGBA(0, 0, 0, 255) : C_WHITE);
+  }
+}
+
+static void draw_seek_amount(void) {
+  if (seek_target < 0) return;
+  int d = (int)((seek_target - seek_base) / 1000), a = d < 0 ? -d : d;
+  /* +30s, -2m, +1m 30s */
+  char text[32];
+  char sign = d < 0 ? '-' : '+';
+  if (a < 60) snprintf(text, sizeof text, "%c%ds", sign, a);
+  else if (a % 60) snprintf(text, sizeof text, "%c%dm %ds", sign, a / 60, a % 60);
+  else snprintf(text, sizeof text, "%c%dm", sign, a / 60);
+  float w = text_width(text, 60, W_EXTRABOLD);
+  text_draw(text, (SC_DESIGN_W - w) / 2 + 2, SC_DESIGN_H * 0.32f - 35 + 3, 60, W_EXTRABOLD, SC_RGBA(0, 0, 0, 160));
+  text_draw(text, (SC_DESIGN_W - w) / 2, SC_DESIGN_H * 0.32f - 35, 60, W_EXTRABOLD, C_WHITE);
+}
+
+static void draw_toast(void) {
+  if (clock_now >= toast_until || !toast[0]) return;
+  float w = text_width(toast, 24, W_SEMIBOLD) + 52, y = SC_DESIGN_H * 0.08f;
+  gfx_rect((SC_DESIGN_W - w) / 2, y, w, 54, 27, SC_RGBA(20, 20, 22, 219));
+  ui_line(toast, (SC_DESIGN_W - w) / 2 + 26, y, 54, 24, W_SEMIBOLD, C_WHITE);
+}
+
+static void draw_failure(void) {
+  gfx_rect(0, 0, SC_DESIGN_W, SC_DESIGN_H, 0, SC_RGBA(10, 10, 11, 235));
+  const char *title = txp("sourceFailed", NULL), *why = player_error(), *hint = txp("failHint", NULL);
+  float y = SC_DESIGN_H / 2 - 90;
+  text_draw(title, (SC_DESIGN_W - text_width(title, 44, W_EXTRABOLD)) / 2, y, 44, W_EXTRABOLD, C_WHITE);
+  if (why && *why) text_draw(why, (SC_DESIGN_W - text_width(why, 24, W_REGULAR)) / 2, y + 74, 24, W_REGULAR, C_TEXT(0.6f));
+  text_draw(hint, (SC_DESIGN_W - text_width(hint, 26, W_SEMIBOLD)) / 2, y + 130, 26, W_SEMIBOLD, C_TEXT(0.78f));
+}
+
+static void frame(double t, float dt) {
+  (void)dt;
+  clock_now = t;
+  player_poll();
+  /* the video shows through: nothing is drawn where the picture is */
+  gfx_clear(SC_RGBA(0, 0, 0, 0));
+  player_state st = player_status();
+  if (seek_target >= 0 && t - seek_at > SEEK_COMMIT_MS) commit_seek();
+  if (st == PLAYER_PLAYING && t - last_report > REPORT_EVERY_MS) report("tick");
+  if (st == PLAYER_ENDED) {
+    leave();
+    return;
+  }
+  if (st == PLAYER_FAILED) {
+    draw_failure();
+    return;
+  }
+  if (!ready || st == PLAYER_LOADING || player_duration() <= 0) {
+    draw_cover(1);
+  } else {
+    if (player_buffering()) gfx_rect(0, 0, SC_DESIGN_W, SC_DESIGN_H, 0, SC_RGBA(10, 10, 11, 128));
+    if (t < bar_until || st == PLAYER_PAUSED || seek_target >= 0) draw_bar();
+    draw_seek_amount();
+  }
+  draw_toast();
+}
+
+static void enter(void) {}
+
+const screen player_screen = {enter, key, frame};

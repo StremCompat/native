@@ -44,7 +44,19 @@ function shapeIcons() {
   return out;
 }
 
-var icons = navIcons().concat(shapeIcons());
+/* the player's buttons (filled shapes), from the web player's page */
+function playerIcons() {
+  var html = fs.readFileSync(path.join(repo, 'service', 'player', 'player-body.html'), 'utf8');
+  var names = { media: 'subtitles', ep: 'episodes', src: 'sources', rw: 'rewind', ff: 'forward', set: 'gear' };
+  var out = [];
+  var re = /id="b_([a-z]+)"><svg viewBox="0 0 24 24"[^>]*>([\s\S]*?)<\/svg>/g,
+    m;
+  while ((m = re.exec(html)))
+    if (names[m[1]]) out.push({ name: names[m[1]], body: m[2], outline: false });
+  return out;
+}
+
+var icons = navIcons().concat(shapeIcons(), playerIcons());
 var rows = Math.ceil(icons.length / COLUMNS);
 var width = CELL * COLUMNS,
   height = CELL * rows;

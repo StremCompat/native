@@ -193,6 +193,7 @@ static void key(app_key k) {
     if (k == K_DOWN && item_at < nitems - 1) item_at++, moved = 1;
     else if (k == K_UP && item_at > 0) item_at--, moved = 1;
     else if (k == K_UP) zone = ZONE_CHIPS;
+    else if (k == K_OK && item_at < nitems) player_start(type, id, vid, items[item_at].seq);
   } else if (zone == ZONE_CHIPS) {
     if (k == K_RIGHT && chip_at < nchips - 1) chip_at++, refilter();
     else if (k == K_LEFT && chip_at > 0) chip_at--, refilter();
