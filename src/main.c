@@ -88,6 +88,7 @@ int main(int argc, char **argv) {
   platform_add_fonts();
   net_init(port, 3);
   img_init(IMG_BUDGET);
+  if (app_start()) return 1;
 
   if (shot) {
     /* offscreen at the design size: the same picture whatever the window */

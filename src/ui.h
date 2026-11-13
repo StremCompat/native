@@ -1,0 +1,54 @@
+/* What every screen draws the same way: the colours, icons, the focus ring, cards, and the
+   easing that moves things toward where they should be. Sizes are the web interface's. */
+#ifndef SC_UI_H
+#define SC_UI_H
+
+#include <stdint.h>
+
+#include "gfx.h"
+#include "icons.h"
+#include "json.h"
+
+#define C_BG SC_RGBA(10, 10, 11, 255)
+#define C_WHITE SC_RGBA(255, 255, 255, 255)
+#define C_CARD SC_RGBA(26, 26, 28, 255)
+/* white at a strength from 0 to 1, as the web interface writes rgba(255,255,255,a) */
+#define C_TEXT(a) SC_RGBA(255, 255, 255, (int)((a) * 255.0f + 0.5f))
+
+int ui_init(void);
+
+void ui_icon(icon_id id, float x, float y, float size, uint32_t color);
+
+/* v moved toward target for dt milliseconds: most of the way within tau, then gently */
+float ui_approach(float v, float target, float dt, float tau);
+
+/* the white ring around what has the focus, with the dark gap of the web interface */
+void ui_focus_ring(float x, float y, float w, float h, float radius);
+
+/* a shade of the background colour over the whole screen, as a CSS linear-gradient: stops of
+   (position 0..1, strength 0..1), top to bottom or left to right; past the ends the nearest
+   stop holds */
+typedef struct {
+  float at, alpha;
+} shade_stop;
+void ui_shade(const shade_stop *stops, int n, int vertical);
+
+/* a title as a row shows it (the server decides its pictures and its lines) */
+typedef struct {
+  char *id, *type, *name, *art, *backdrop, *subtitle, *video_id;
+  float progress;
+  int watched, up_next;
+} card;
+
+void card_read(card *c, const jval *v);
+void card_clear(card *c);
+
+/* poster cards (232 x 347) or wide ones (400 x 225) with the title and progress on them */
+#define CARD_W 232.0f
+#define CARD_H 347.0f
+#define WIDE_W 400.0f
+#define WIDE_H 225.0f
+#define CARD_GAP 20.0f
+void ui_card(const card *c, float x, float y, int wide, int focused);
+
+#endif

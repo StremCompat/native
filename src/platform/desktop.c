@@ -1,4 +1,4 @@
-/* Windows and desktop Linux: for development and the screenshot tests. */
+/* Windows: for development and the screenshot tests. */
 #include "platform.h"
 
 #include <stdio.h>
@@ -23,8 +23,6 @@ app_key platform_key(const SDL_Event *ev) {
   }
 }
 
-#ifdef _WIN32
-
 void platform_add_fonts(void) {
   /* Korean, Japanese, Simplified and Traditional Chinese, then symbols */
   static const char *names[] = {"malgun.ttf", "YuGothR.ttc", "msgothic.ttc", "msyh.ttc", "msjh.ttc", "seguisym.ttf"};
@@ -39,10 +37,3 @@ void platform_add_fonts(void) {
   }
 }
 
-#else
-
-#include "fontscan.h"
-
-void platform_add_fonts(void) { fontscan_add("/usr/share/fonts"); }
-
-#endif

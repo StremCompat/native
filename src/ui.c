@@ -1,0 +1,134 @@
+#include "ui.h"
+
+#include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "app.h"
+#include "img.h"
+#include "text.h"
+#include "util.h"
+
+static sc_tex icons;
+
+int ui_init(void) {
+  char path[600];
+  snprintf(path, sizeof path, "%s", app_asset_dir("icons.png"));
+  icons = img_load_alpha(path);
+  return icons.id ? 0 : -1;
+}
+
+void ui_icon(icon_id id, float x, float y, float size, uint32_t color) {
+  float cx = (float)((int)id % ICON_COLUMNS) * ICON_CELL, cy = (float)((int)id / ICON_COLUMNS) * ICON_CELL;
+  gfx_alpha_quad(&icons, x, y, size, size, cx / icons.w, cy / icons.h, (cx + ICON_CELL) / icons.w,
+                 (cy + ICON_CELL) / icons.h, color);
+}
+
+float ui_approach(float v, float target, float dt, float tau) {
+  if (dt <= 0) return v;
+  float k = 1.0f - expf(-dt / tau);
+  float next = v + (target - v) * k;
+  /* close enough: land exactly, so still screens stop changing */
+  return fabsf(target - next) < 0.05f ? target : next;
+}
+
+void ui_focus_ring(float x, float y, float w, float h, float radius) {
+  /* box-shadow: 0 0 0 3px #0a0a0b, 0 0 0 7px #fff */
+  gfx_outline(x - 3, y - 3, w + 6, h + 6, radius + 3, 3, C_BG);
+  gfx_outline(x - 7, y - 7, w + 14, h + 14, radius + 7, 4, C_WHITE);
+}
+
+/* one band of a shade, from strength a at p0 to b at p1 (design pixels) */
+static void shade_band(float p0, float p1, float a, float b, int vertical) {
+  uint32_t ca = SC_RGBA(10, 10, 11, (int)(a * 255)), cb = SC_RGBA(10, 10, 11, (int)(b * 255));
+  if (p1 <= p0) return;
+  if (vertical) gfx_gradient(0, p0, SC_DESIGN_W, p1 - p0, 0, ca, cb, 1);
+  else gfx_gradient(p0, 0, p1 - p0, SC_DESIGN_H, 0, ca, cb, 0);
+}
+
+void ui_shade(const shade_stop *s, int n, int vertical) {
+  float len = vertical ? SC_DESIGN_H : SC_DESIGN_W;
+  shade_band(0, s[0].at * len, s[0].alpha, s[0].alpha, vertical);
+  for (int i = 0; i + 1 < n; i++) shade_band(s[i].at * len, s[i + 1].at * len, s[i].alpha, s[i + 1].alpha, vertical);
+  shade_band(s[n - 1].at * len, len, s[n - 1].alpha, s[n - 1].alpha, vertical);
+}
+
+/* ---------- cards ---------- */
+static char *dup_or_null(const char *s) { return s && *s ? str_dup(s) : NULL; }
+
+void card_read(card *c, const jval *v) {
+  memset(c, 0, sizeof *c);
+  c->id = dup_or_null(json_str(json_get(v, "id"), NULL));
+  c->type = dup_or_null(json_str(json_get(v, "type"), NULL));
+  c->name = dup_or_null(json_str(json_get(v, "name"), NULL));
+  c->art = dup_or_null(json_str(json_get(v, "art"), NULL));
+  c->backdrop = dup_or_null(json_str(json_get(v, "backdrop"), NULL));
+  c->subtitle = dup_or_null(json_str(json_get(v, "subtitle"), NULL));
+  c->video_id = dup_or_null(json_str(json_get(v, "videoId"), NULL));
+  c->progress = (float)json_num(json_get(v, "progress"), 0);
+  c->watched = json_bool(json_get(v, "watched"), 0);
+  c->up_next = json_bool(json_get(v, "upNext"), 0);
+}
+
+void card_clear(card *c) {
+  free(c->id);
+  free(c->type);
+  free(c->name);
+  free(c->art);
+  free(c->backdrop);
+  free(c->subtitle);
+  free(c->video_id);
+  memset(c, 0, sizeof *c);
+}
+
+#define CARD_RADIUS 12.0f
+
+/* no picture: the title on a dark gradient (.card.noart) */
+static void no_art(const card *c, float x, float y, float w, float h, int wide) {
+  gfx_gradient(x, y, w, h, CARD_RADIUS, SC_RGBA(34, 34, 37, 255), SC_RGBA(17, 22, 29, 255), 1);
+  if (!wide && c->name) {
+    float line = 27 * 1.25f, used = text_draw_wrap(c->name, 0, 0, w - 36, 27, W_BOLD, 0, 3, line);
+    text_draw_wrap(c->name, x + 18, y + h - 20 - used, w - 36, 27, W_BOLD, C_WHITE, 3, line);
+  }
+}
+
+/* the title and the line under it on wide cards (.cwlabel), over a shade, and the progress */
+static void wide_label(const card *c, float x, float y, float w, float h) {
+  /* the shade starts clear, so its own rounded top corners never show */
+  float shade = 120;
+  gfx_gradient(x, y + h - shade, w, shade, CARD_RADIUS, SC_RGBA(0, 0, 0, 0), SC_RGBA(0, 0, 0, 219), 1);
+  float bottom = y + h - 28, sub_h = c->subtitle ? 30 : 0;
+  if (c->name) text_draw_fit(c->name, x + 16, bottom - sub_h - 31, w - 32, 25, W_SEMIBOLD, C_WHITE);
+  if (c->subtitle)
+    text_draw_fit(c->subtitle, x + 16, bottom - 27, w - 32, 21, c->up_next ? W_SEMIBOLD : W_REGULAR,
+                  c->up_next ? C_WHITE : C_TEXT(0.76f));
+  if (c->progress > 0) {
+    float bw = w - 28;
+    gfx_rect(x + 14, y + h - 18, bw, 6, 3, C_TEXT(0.28f));
+    gfx_rect(x + 14, y + h - 18, bw * clampf(c->progress, 0, 1), 6, 3, C_WHITE);
+  }
+}
+
+void ui_card(const card *c, float x, float y, int wide, int focused) {
+  float w = wide ? WIDE_W : CARD_W, h = wide ? WIDE_H : CARD_H;
+  if (focused) y -= 6;
+  float fade;
+  const sc_tex *pic = img_get(c->art, (int)w, &fade);
+  if (pic) {
+    if (fade < 1) gfx_rect(x, y, w, h, CARD_RADIUS, C_CARD);
+    gfx_image(pic, x, y, w, h, CARD_RADIUS, fade, COVER);
+  } else if (!c->art || img_failed(c->art, (int)w)) {
+    no_art(c, x, y, w, h, wide);
+  } else {
+    gfx_rect(x, y, w, h, CARD_RADIUS, C_CARD);
+  }
+  if (wide) {
+    wide_label(c, x, y, w, h);
+  } else if (c->watched) {
+    /* .wbadge: a check in a dark circle at the top right */
+    gfx_rect(x + w - 54, y + 12, 42, 42, 21, SC_RGBA(0, 0, 0, 184));
+    ui_icon(ICON_CHECK, x + w - 54 + 8, y + 20, 26, C_WHITE);
+  }
+  if (focused) ui_focus_ring(x, y, w, h, CARD_RADIUS);
+}

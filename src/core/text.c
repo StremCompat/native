@@ -18,7 +18,7 @@
 #define ATLAS 1024
 #define CACHE_SLOTS 4096
 #define MAX_FONTS 12
-#define MAX_CANDIDATES 64
+#define MAX_CANDIDATES 128
 #define BLOCKS (0x110000 >> 8) /* 256-character blocks of Unicode */
 
 typedef struct {

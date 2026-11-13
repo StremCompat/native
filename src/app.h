@@ -12,6 +12,9 @@ void app_event(const SDL_Event *ev);
 /* draws one frame on a surface of w x h at time t (milliseconds) */
 void app_frame(int w, int h, double t);
 int app_wants_quit(void);
+void app_quit(void);
+/* after the window and the server connection are ready: texts, icons, the first screen */
+int app_start(void);
 
 /* Runs a test script offscreen: one command per line, "key down", "wait 300", "shot name".
    Time is virtual, so animations land at the same point on every run. */

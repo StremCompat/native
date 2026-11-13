@@ -263,8 +263,8 @@ void gfx_image(const sc_tex *t, float x, float y, float w, float h, float radius
       u1 = 1 - u0;
     } else {
       float keep = pic_ratio / box_ratio;
-      v0 = (1 - keep) / 2;
-      v1 = 1 - v0;
+      v0 = cover == COVER_TOP ? 0 : (1 - keep) / 2;
+      v1 = v0 + keep;
     }
   }
   use_texture(t->id);

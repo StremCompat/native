@@ -7,8 +7,8 @@ set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ZIG="${ZIG:-$HOME/stremcompat-build/tools/zig/zig}"
 TARGET="${1:-win}"
-SRC=$(ls "$HERE"/src/*.c)
-CFLAGS="-std=c11 -O2 -Wall -Wextra -Wno-unused-parameter -I$HERE/src -I$HERE/third_party/stb"
+SRC=$(ls "$HERE"/src/*.c "$HERE"/src/core/*.c "$HERE"/src/screens/*.c 2>/dev/null)
+CFLAGS="-std=c11 -O2 -Wall -Wextra -Wno-unused-parameter -I$HERE/src -I$HERE/src/core -I$HERE/src/platform -I$HERE/third_party/stb"
 
 case "$TARGET" in
   win)
@@ -42,7 +42,7 @@ case "$TARGET" in
     mkdir -p "$OUT"
     for t in "$HERE"/tests/test_*.c; do
       name=$(basename "$t" .c)
-      "$ZIG" cc -target x86_64-windows-gnu $CFLAGS -I"$SDL/include/SDL2" "$t" "$HERE/src/json.c" "$HERE/src/util.c" \
+      "$ZIG" cc -target x86_64-windows-gnu $CFLAGS -I"$SDL/include/SDL2" "$t" "$HERE/src/core/json.c" "$HERE/src/core/util.c" \
         "$SDL/lib/libSDL2.dll.a" -o "$OUT/$name.exe"
     done
     cp "$SDL/bin/SDL2.dll" "$OUT/"

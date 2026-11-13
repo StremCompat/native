@@ -27,7 +27,9 @@ void gfx_rect(float x, float y, float w, float h, float radius, uint32_t color);
 void gfx_gradient(float x, float y, float w, float h, float radius, uint32_t a, uint32_t b, int vertical);
 /* a ring of the given width just inside the rectangle (focus outlines) */
 void gfx_outline(float x, float y, float w, float h, float radius, float width, uint32_t color);
-/* a picture filling the box; cover crops it to keep its shape */
+/* how a picture fills its box: stretched, or cropped to keep its shape (centred, or keeping
+   its top, as backdrops do) */
+enum { STRETCH, COVER, COVER_TOP };
 void gfx_image(const sc_tex *t, float x, float y, float w, float h, float radius, float opacity, int cover);
 /* part of an alpha texture, tinted (glyphs) */
 void gfx_alpha_quad(const sc_tex *t, float x, float y, float w, float h, float u0, float v0, float u1, float v1,

@@ -4,17 +4,17 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "api.h"
 #include "gfx.h"
 #include "img.h"
 #include "net.h"
 #include "platform.h"
-#include "text.h"
+#include "screens.h"
+#include "ui.h"
 #include "util.h"
 
 static char asset_root[512] = "assets";
 static int quit;
-static int focus;
-static double clock_ms;
 
 const char *app_asset_dir(const char *sub) {
   static char path[600];
@@ -51,40 +51,38 @@ static app_key key_of(const SDL_Event *ev) {
   }
 }
 
+static const screen *current;
+static double last_frame;
+
+void app_show(const screen *s) {
+  current = s;
+  s->enter();
+}
+
+void app_quit(void) { quit = 1; }
+
 static void on_key(app_key k) {
-  if (k == K_RIGHT && focus < 5) focus++;
-  else if (k == K_LEFT && focus > 0) focus--;
-  else if (k == K_BACK) quit = 1;
+  if (k != K_NONE && current) current->key(k);
 }
 
 void app_event(const SDL_Event *ev) { on_key(key_of(ev)); }
 
 int app_wants_quit(void) { return quit; }
 
-#define BG SC_RGBA(10, 10, 11, 255)
-#define WHITE SC_RGBA(255, 255, 255, 255)
+/* the texts and the icons, then Home. The server starts with the app on the TV, so its first
+   answer may take a moment: it is waited for up to 30 seconds. */
+int app_start(void) {
+  if (ui_init()) return -1;
+  for (int i = 0; i < 120 && api_load_strings(); i++) SDL_Delay(250);
+  app_show(&home_screen);
+  return 0;
+}
 
 void app_frame(int w, int h, double t) {
-  clock_ms = t;
-  gfx_begin(w, h, BG);
-  /* side menu */
-  gfx_gradient(0, 0, 128, SC_DESIGN_H, 0, SC_RGBA(10, 10, 11, 235), SC_RGBA(10, 10, 11, 0), 0);
-  gfx_rect(34, 416, 60, 56, 14, WHITE);
-  /* hero */
-  text_draw("StremCompat", 176, 380, 76, W_EXTRABOLD, WHITE);
-  text_draw("Action \xE2\x80\xA2 Crime \xE2\x80\xA2 Drama", 176, 500, 26, W_SEMIBOLD, SC_RGBA(255, 255, 255, 158));
-  text_draw_wrap("A native client drawn by the TV's own GPU: the same look, much smoother on older sets. "
-                 "\xED\x95\x9C\xEA\xB5\xAD\xEC\x96\xB4 \xE6\x97\xA5\xE6\x9C\xAC\xE8\xAA\x9E \xE4\xB8\xAD\xE6\x96\x87",
-                 176, 548, 980, 30, W_REGULAR, SC_RGBA(255, 255, 255, 199), 2, 0);
-  gfx_rect(176, 650, 200, 64, 32, WHITE);
-  text_draw("See details", 206, 667, 26, W_BOLD, BG);
-  /* a row of cards */
-  text_draw("Continue watching", 178, 850, 26, W_BOLD, SC_RGBA(255, 255, 255, 199));
-  for (int i = 0; i < 6; i++) {
-    float x = 176 + i * 420.0f, y = 895;
-    gfx_gradient(x, y, 400, 225, 12, SC_RGBA(40, 40, 44, 255), SC_RGBA(22, 22, 24, 255), 1);
-    if (i == focus) gfx_outline(x - 7, y - 7, 414, 239, 18, 4, WHITE);
-  }
+  float dt = last_frame > 0 && t > last_frame ? (float)(t - last_frame) : 0;
+  last_frame = t;
+  gfx_begin(w, h, C_BG);
+  if (current) current->frame(t, dt);
   gfx_end();
 }
 
@@ -117,6 +115,8 @@ int app_run_script(const char *script_path, const char *shot_path) {
           if (!strcmp(arg, keys[i].name)) on_key(keys[i].key);
         t += 16;
       } else if (sscanf(line, "wait %399s", arg) == 1) {
+        /* what the server answered by now counts from now, then time passes */
+        settle(t);
         t += atof(arg);
       } else if (sscanf(line, "shot %399s", arg) == 1) {
         settle(t);

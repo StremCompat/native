@@ -2,8 +2,12 @@
 #include "platform.h"
 
 #include <SDL_webOS.h>
+#include <dirent.h>
+#include <stdio.h>
+#include <string.h>
+#include <strings.h>
 
-#include "fontscan.h"
+#include "text.h"
 
 void platform_init(void) {
   /* Back comes to the app instead of closing it; the app decides when Back means leave */
@@ -24,5 +28,23 @@ app_key platform_key(const SDL_Event *ev) {
   }
 }
 
+/* every font file under the folder; the text module opens one only when a character needs it */
+static void add_fonts(const char *dir, int depth) {
+  DIR *d = opendir(dir);
+  if (!d) return;
+  struct dirent *e;
+  while ((e = readdir(d))) {
+    if (e->d_name[0] == '.') continue;
+    char path[1024];
+    snprintf(path, sizeof path, "%s/%s", dir, e->d_name);
+    const char *dot = strrchr(e->d_name, '.');
+    if (dot && (!strcasecmp(dot, ".ttf") || !strcasecmp(dot, ".otf") || !strcasecmp(dot, ".ttc")))
+      text_add_fallback(path);
+    else if (depth < 4)
+      add_fonts(path, depth + 1);
+  }
+  closedir(d);
+}
+
 /* the TV's own fonts include Korean, Japanese and Chinese ones */
-void platform_add_fonts(void) { fontscan_add("/usr/share/fonts"); }
+void platform_add_fonts(void) { add_fonts("/usr/share/fonts", 0); }
