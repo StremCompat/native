@@ -87,3 +87,21 @@ const char *tx(const char *key) {
   text_slot *s = slot_for(key);
   return s && s->key ? s->text : key;
 }
+
+const char *txf(const char *key, const char *a0, const char *a1) {
+  static char ring[4][512];
+  static int next;
+  char *out = ring[next++ % 4];
+  size_t n = 0;
+  for (const char *p = tx(key); *p && n < sizeof ring[0] - 1; p++) {
+    const char *arg = p[0] == '{' && (p[1] == '0' || p[1] == '1') && p[2] == '}' ? (p[1] == '0' ? a0 : a1) : NULL;
+    if (!arg) {
+      out[n++] = *p;
+      continue;
+    }
+    for (; *arg && n < sizeof ring[0] - 1; arg++) out[n++] = *arg;
+    p += 2;
+  }
+  out[n] = 0;
+  return out;
+}

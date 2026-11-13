@@ -94,6 +94,26 @@ var manifest = {
     { type: 'movie', id: 'new', name: 'New' }
   ]
 };
+/* two seasons, the last episode still to air */
+function withEpisodes(t) {
+  if (t.type !== 'series') return t;
+  var day = 86400000,
+    start = Date.now() - 120 * day;
+  t.videos = [];
+  [8, 6].forEach(function (count, s) {
+    for (var e = 1; e <= count; e++)
+      t.videos.push({
+        id: t.id + ':' + (s + 1) + ':' + e,
+        season: s + 1,
+        episode: e,
+        title: 'Chapter ' + (s * 8 + e),
+        overview: 'What happens in episode ' + e + ' of season ' + (s + 1) + ', in one or two sentences.',
+        thumbnail: base + '/backdrop/' + (s * 8 + e) + '.png',
+        released: new Date(start + (s * 8 + e) * 7 * day).toISOString()
+      });
+  });
+  return t;
+}
 function catalog(type, offset) {
   var out = [];
   for (var i = 0; i < 14; i++) out.push(title(i + offset, type));
@@ -119,7 +139,7 @@ var addon = http.createServer(function (req, res) {
     res.writeHead(200, { 'Content-Type': 'image/png' });
     return res.end(pic[1] === 'poster' ? png(300, 450, color, dark) : png(1280, 720, color, dark));
   }
-  var answer = meta ? { meta: title(Number(meta[2]), meta[1]) } : answers[url];
+  var answer = meta ? { meta: withEpisodes(title(Number(meta[2]), meta[1])) } : answers[url];
   res.writeHead(answer ? 200 : 404, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify(answer || { error: 'not found' }));
 });

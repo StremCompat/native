@@ -33,6 +33,20 @@ typedef struct {
 } shade_stop;
 void ui_shade(const shade_stop *stops, int n, int vertical);
 
+/* one line of text centred in a CSS line box of height box; returns its width */
+float ui_line(const char *s, float x, float y, float box, float size, int weight, uint32_t color);
+/* "7.4 [IMDb]" in a line box; returns its width */
+float ui_rating(const char *rating, float x, float y, float box, float size, float badge_size, uint32_t color);
+
+/* the picture behind a screen, fading from the last one to the next */
+typedef struct {
+  char *now, *before;
+  float mix;
+} backdrop;
+void backdrop_set(backdrop *b, const char *url);
+/* from x to the right edge, h tall, keeping the picture's top */
+void backdrop_draw(backdrop *b, float x, float h, float opacity, float dt);
+
 /* a title as a row shows it (the server decides its pictures and its lines) */
 typedef struct {
   char *id, *type, *name, *art, *backdrop, *subtitle, *video_id;

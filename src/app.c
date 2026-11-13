@@ -51,18 +51,33 @@ static app_key key_of(const SDL_Event *ev) {
   }
 }
 
-static const screen *current;
+#define STACK 8
+
+static const screen *stack[STACK];
+static int depth;
 static double last_frame;
 
 void app_show(const screen *s) {
-  current = s;
+  depth = 1;
+  stack[0] = s;
   s->enter();
+}
+
+void app_push(const screen *s) {
+  if (depth < STACK) depth++;
+  stack[depth - 1] = s;
+  s->enter();
+}
+
+void app_back(void) {
+  if (depth > 1) depth--;
+  stack[depth - 1]->enter();
 }
 
 void app_quit(void) { quit = 1; }
 
 static void on_key(app_key k) {
-  if (k != K_NONE && current) current->key(k);
+  if (k != K_NONE && depth) stack[depth - 1]->key(k);
 }
 
 void app_event(const SDL_Event *ev) { on_key(key_of(ev)); }
@@ -82,7 +97,7 @@ void app_frame(int w, int h, double t) {
   float dt = last_frame > 0 && t > last_frame ? (float)(t - last_frame) : 0;
   last_frame = t;
   gfx_begin(w, h, C_BG);
-  if (current) current->frame(t, dt);
+  if (depth) stack[depth - 1]->frame(t, dt);
   gfx_end();
 }
 

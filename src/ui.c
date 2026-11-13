@@ -54,6 +54,34 @@ void ui_shade(const shade_stop *s, int n, int vertical) {
   shade_band(s[n - 1].at * len, len, s[n - 1].alpha, s[n - 1].alpha, vertical);
 }
 
+float ui_line(const char *s, float x, float y, float box, float size, int weight, uint32_t color) {
+  return s && *s ? text_draw(s, x, y + (box - text_line_height(size)) / 2, size, weight, color) : 0;
+}
+
+float ui_rating(const char *rating, float x, float y, float box, float size, float badge_size, uint32_t color) {
+  if (!rating || !*rating) return 0;
+  float w = ui_line(rating, x, y, box, size, W_REGULAR, color) + 8, bh = badge_size + 6;
+  float bw = text_width("IMDb", badge_size, W_EXTRABOLD) + 10, by = y + (box - bh) / 2 + 1;
+  gfx_rect(x + w, by, bw, bh, 4, SC_RGBA(245, 197, 24, 255));
+  ui_line("IMDb", x + w + 5, by, bh, badge_size, W_EXTRABOLD, SC_RGBA(17, 17, 17, 255));
+  return w + bw;
+}
+
+void backdrop_set(backdrop *b, const char *url) {
+  if (!url || !*url || (b->now && !strcmp(b->now, url))) return;
+  free(b->before);
+  b->before = b->now;
+  b->now = str_dup(url);
+  b->mix = 0;
+}
+
+void backdrop_draw(backdrop *b, float x, float h, float opacity, float dt) {
+  b->mix = ui_approach(b->mix, 1, dt, 70);
+  const sc_tex *before = img_get(b->before, 1280, NULL), *now = img_get(b->now, 1280, NULL);
+  if (before && b->mix < 1) gfx_image(before, x, 0, SC_DESIGN_W - x, h, 0, opacity * (1 - b->mix), COVER_TOP);
+  if (now) gfx_image(now, x, 0, SC_DESIGN_W - x, h, 0, opacity * (before ? b->mix : 1), COVER_TOP);
+}
+
 /* ---------- cards ---------- */
 static char *dup_or_null(const char *s) { return s && *s ? str_dup(s) : NULL; }
 

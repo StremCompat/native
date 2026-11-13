@@ -14,5 +14,7 @@ void api_get(const char *path, api_done done, void *user);
 int api_load_strings(void);
 /* the text for a key, in the interface's language, else in English, else the key itself */
 const char *tx(const char *key);
+/* the same with {0} and {1} filled in; the result lasts until a few more calls */
+const char *txf(const char *key, const char *a0, const char *a1);
 
 #endif

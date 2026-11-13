@@ -48,8 +48,7 @@ static int hero_asked;
 static hero_info hero;
 static const card *hero_from; /* the card it came from: one title can be on two rows */
 static float rows_y;       /* shown vertical offset of the rows */
-static char *bg_now, *bg_before;
-static float bg_mix = 1;   /* 0..1 from the old backdrop to the new one */
+static backdrop bg;
 static double clock_now;
 
 /* ---------- data ---------- */
@@ -230,12 +229,7 @@ static void follow_hero(void) {
   }
   hero_changed = clock_now;
   hero_asked = 0;
-  if (hero.backdrop && (!bg_now || strcmp(bg_now, hero.backdrop))) {
-    free(bg_before);
-    bg_before = bg_now;
-    bg_now = str_dup(hero.backdrop);
-    bg_mix = 0;
-  }
+  backdrop_set(&bg, hero.backdrop);
 }
 
 static void ask_hero_meta(void) {
@@ -254,22 +248,13 @@ static void ask_hero_meta(void) {
 /* ---------- drawing ---------- */
 static void draw_backdrop(int featured, float dt) {
   /* #bg: the right part of the screen, or more of it with the featured titles */
-  float x = featured ? 346 : 730, h = featured ? 929 : 670, o = featured ? 0.92f : 0.86f;
-  bg_mix = ui_approach(bg_mix, 1, dt, 70);
-  const sc_tex *before = img_get(bg_before, 1280, NULL), *now = img_get(bg_now, 1280, NULL);
-  if (before && bg_mix < 1) gfx_image(before, x, 0, SC_DESIGN_W - x, h, 0, o * (1 - bg_mix), COVER_TOP);
-  if (now) gfx_image(now, x, 0, SC_DESIGN_W - x, h, 0, o * (now == before ? 1 : bg_mix), COVER_TOP);
+  backdrop_draw(&bg, featured ? 346 : 730, featured ? 929 : 670, featured ? 0.92f : 0.86f, dt);
   static const shade_stop down[] = {{0.26f, 0}, {0.38f, 0.25f}, {0.49f, 0.6f}, {0.57f, 0.88f}, {0.61f, 1}};
   static const shade_stop right[] = {{0.38f, 1}, {0.44f, 0.9f}, {0.51f, 0.66f}, {0.59f, 0.36f}, {0.67f, 0.14f}, {0.76f, 0}};
   static const shade_stop down_f[] = {{0.40f, 0}, {0.58f, 0.35f}, {0.76f, 0.85f}, {0.86f, 1}};
   static const shade_stop right_f[] = {{0.18f, 1}, {0.26f, 0.86f}, {0.38f, 0.55f}, {0.52f, 0.2f}, {0.64f, 0}};
   ui_shade(featured ? down_f : down, featured ? 4 : 5, 1);
   ui_shade(featured ? right_f : right, featured ? 5 : 6, 0);
-}
-
-/* one line of text centred in a CSS line box of height box */
-static float line(const char *s, float x, float y, float box, float size, int weight, uint32_t color) {
-  return s ? text_draw(s, x, y + (box - text_line_height(size)) / 2, size, weight, color) : 0;
 }
 
 static void draw_hero(int featured) {
@@ -289,20 +274,15 @@ static void draw_hero(int featured) {
   y += logo_h;
   if (featured) {
     y += 14;
-    line(hero.genres, x, y, 34, 26, W_SEMIBOLD, C_TEXT(0.62f));
+    ui_line(hero.genres, x, y, 34, 26, W_SEMIBOLD, C_TEXT(0.62f));
     y += 34;
   }
   /* where the viewer stopped, the length and year, the rating */
   float size = featured ? 28 : 24, box = featured ? 38 : 32, mx = x;
   y += 16;
-  if (hero.where) mx += line(hero.where, mx, y, box, size, W_BOLD, C_WHITE) + 24;
-  if (hero.info) mx += line(hero.info, mx, y, box, size, W_REGULAR, C_TEXT(0.72f)) + 24;
-  if (hero.rating) {
-    mx += line(hero.rating, mx, y, box, size, W_REGULAR, C_TEXT(0.72f)) + 8;
-    float bw = text_width("IMDb", 16, W_EXTRABOLD) + 10, by = y + (box - 22) / 2 + 1;
-    gfx_rect(mx, by, bw, 22, 4, SC_RGBA(245, 197, 24, 255));
-    line("IMDb", mx + 5, by, 22, 16, W_EXTRABOLD, SC_RGBA(17, 17, 17, 255));
-  }
+  if (hero.where) mx += ui_line(hero.where, mx, y, box, size, W_BOLD, C_WHITE) + 24;
+  if (hero.info) mx += ui_line(hero.info, mx, y, box, size, W_REGULAR, C_TEXT(0.72f)) + 24;
+  ui_rating(hero.rating, mx, y, box, size, 16, C_TEXT(0.72f));
   y += box + 12;
   float ds = featured ? 30 : 25, lh = ds * 1.45f;
   if (hero.description)
@@ -313,7 +293,7 @@ static void draw_hero(int featured) {
   const char *label = tx("seeDetails");
   float bw = text_width(label, 26, W_BOLD) + 72;
   gfx_rect(x, y, bw, 64, 32, nav_has_focus() ? C_TEXT(0.16f) : C_WHITE);
-  line(label, x + 36, y, 64, 26, W_BOLD, nav_has_focus() ? C_WHITE : C_BG);
+  ui_line(label, x + 36, y, 64, 26, W_BOLD, nav_has_focus() ? C_WHITE : C_BG);
   float dx = 1676, dy = y + 64 - 27 - 10;
   for (int i = 0; i < featured_count(); i++) {
     float dw = i == featured_at ? 30 : 10;
@@ -381,6 +361,7 @@ static void key(app_key k) {
     else if (k == K_LEFT && featured_at > 0) featured_at--;
     else if (k == K_LEFT) nav_focus(NAV_HOME);
     else if (k == K_DOWN) top = !first_row();
+    else if (k == K_OK) title_open(hero_card()->type, hero_card()->id);
     featured_since = clock_now;
     return;
   }
@@ -390,6 +371,8 @@ static void key(app_key k) {
   else if (k == K_LEFT) nav_focus(NAV_HOME);
   else if (k == K_DOWN) move_row(1);
   else if (k == K_UP && !move_row(-1)) top = 1;
+  else if (k == K_OK && focused_card() && focused_card()->id && focused_card()->type)
+    title_open(focused_card()->type, focused_card()->id);
   else if (k == K_BACK) {
     top = 1;
     first_row();
