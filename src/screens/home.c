@@ -323,7 +323,7 @@ static void draw_hero(int featured) {
 }
 
 static void draw_rank(int n, float x, float y) {
-  char s[4];
+  char s[12];
   snprintf(s, sizeof s, "%d", n);
   text_draw(s, x + 12, y + 7, 72, W_EXTRABOLD, SC_RGBA(0, 0, 0, 200));
   text_draw(s, x + 10, y + 4, 72, W_EXTRABOLD, C_WHITE);
