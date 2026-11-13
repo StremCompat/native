@@ -58,6 +58,7 @@ int main(int argc, char **argv) {
     else if (!strcmp(argv[i], "--size") && i + 1 < argc) sscanf(argv[++i], "%dx%d", &win_w, &win_h);
     else if (!strcmp(argv[i], "--port") && i + 1 < argc) port = atoi(argv[++i]);
   }
+  platform_init();
   if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0) {
     fprintf(stderr, "SDL: %s\n", SDL_GetError());
     return 1;

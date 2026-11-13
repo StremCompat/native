@@ -7,6 +7,22 @@
 
 #include "text.h"
 
+void platform_init(void) {}
+
+/* the keyboard stands in for the remote: Escape and Backspace are Back, F1 to F4 the colours */
+app_key platform_key(const SDL_Event *ev) {
+  if (ev->type != SDL_KEYDOWN) return K_NONE;
+  switch (ev->key.keysym.sym) {
+  case SDLK_ESCAPE:
+  case SDLK_BACKSPACE: return K_BACK;
+  case SDLK_F1: return K_RED;
+  case SDLK_F2: return K_GREEN;
+  case SDLK_F3: return K_YELLOW;
+  case SDLK_F4: return K_BLUE;
+  default: return K_NONE;
+  }
+}
+
 #ifdef _WIN32
 
 void platform_add_fonts(void) {

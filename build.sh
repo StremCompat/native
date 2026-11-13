@@ -1,7 +1,8 @@
 #!/bin/bash
 # Builds StremCompat with Zig as the C compiler, for one target:
 #   ./build.sh win      Windows x64, for development and the screenshot tests
-# The TV targets (webos, tizen, android) are added with their SDKs.
+#   ./build.sh webos    LG webOS (ARM)
+#   ./build.sh test     the unit tests (Windows)
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ZIG="${ZIG:-$HOME/stremcompat-build/tools/zig/zig}"
@@ -20,6 +21,19 @@ case "$TARGET" in
     rm -rf "$OUT/assets"
     cp -r "$HERE/assets" "$OUT/assets"
     echo "built $OUT/stremcompat.exe"
+    ;;
+  webos)
+    # ARM, against the TV's own SDL2, GLES2 and C library (webOS Homebrew toolchain)
+    TC="${WEBOS_TOOLCHAIN:-$HOME/stremcompat-build/webos/arm-webos-linux-gnueabi_sdk-buildroot}"
+    SYSROOT="$TC/arm-webos-linux-gnueabi/sysroot"
+    OUT="$HERE/build/webos"
+    mkdir -p "$OUT"
+    "$TC/bin/arm-webos-linux-gnueabi-gcc" $CFLAGS -D_GNU_SOURCE -DIMG_BUDGET="(48u << 20)" -I"$SYSROOT/usr/include/SDL2" \
+      $SRC "$HERE/src/platform/webos.c" -Wl,--as-needed -lSDL2 -lpthread -lm -o "$OUT/stremcompat"
+    "$TC/bin/arm-webos-linux-gnueabi-strip" "$OUT/stremcompat"
+    rm -rf "$OUT/assets"
+    cp -r "$HERE/assets" "$OUT/assets"
+    echo "built $OUT/stremcompat"
     ;;
   test)
     # unit tests, built for Windows like the app; run them from Windows

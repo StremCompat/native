@@ -7,6 +7,7 @@
 #include "gfx.h"
 #include "img.h"
 #include "net.h"
+#include "platform.h"
 #include "text.h"
 #include "util.h"
 
@@ -32,16 +33,20 @@ int app_init(int argc, char **argv) {
   return 0;
 }
 
+/* the keys every remote sends the same way; the rest come from platform_key */
 static app_key key_of(const SDL_Event *ev) {
   if (ev->type != SDL_KEYDOWN) return K_NONE;
+  app_key k = platform_key(ev);
+  if (k != K_NONE) return k;
   switch (ev->key.keysym.sym) {
   case SDLK_UP: return K_UP;
   case SDLK_DOWN: return K_DOWN;
   case SDLK_LEFT: return K_LEFT;
   case SDLK_RIGHT: return K_RIGHT;
-  case SDLK_RETURN: return K_OK;
-  case SDLK_ESCAPE:
-  case SDLK_BACKSPACE: return K_BACK;
+  case SDLK_RETURN:
+  case SDLK_KP_ENTER: return K_OK;
+  case SDLK_AUDIOPLAY:
+  case SDLK_AUDIOSTOP: return K_PLAY;
   default: return K_NONE;
   }
 }

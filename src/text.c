@@ -7,9 +7,13 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* only part of stb_truetype is used; the rest would be warned about as unused */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-function"
 #define STB_TRUETYPE_IMPLEMENTATION
 #define STBTT_STATIC
 #include "stb_truetype.h"
+#pragma GCC diagnostic pop
 
 #define ATLAS 1024
 #define CACHE_SLOTS 4096
