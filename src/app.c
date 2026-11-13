@@ -5,6 +5,8 @@
 #include <string.h>
 
 #include "gfx.h"
+#include "img.h"
+#include "net.h"
 #include "text.h"
 #include "util.h"
 
@@ -81,6 +83,18 @@ void app_frame(int w, int h, double t) {
   gfx_end();
 }
 
+/* before a screenshot: every answer from the server in (pictures loading start more), so the
+   picture does not depend on how fast the machine was. Gives up after 15 real seconds. */
+static void settle(double t) {
+  double give_up = now_ms() + 15000;
+  do {
+    net_poll();
+    img_frame(t);
+    app_frame(SC_DESIGN_W, SC_DESIGN_H, t);
+    if (net_pending()) SDL_Delay(5);
+  } while (net_pending() && now_ms() < give_up);
+}
+
 int app_run_script(const char *script_path, const char *shot_path) {
   double t = 0;
   int rc = 0;
@@ -100,12 +114,16 @@ int app_run_script(const char *script_path, const char *shot_path) {
       } else if (sscanf(line, "wait %399s", arg) == 1) {
         t += atof(arg);
       } else if (sscanf(line, "shot %399s", arg) == 1) {
+        settle(t);
         rc |= main_draw_and_save(arg, t);
       }
       line = strtok(NULL, "\n");
     }
     free(script);
   }
-  if (shot_path) rc |= main_draw_and_save(shot_path, t);
+  if (shot_path) {
+    settle(t);
+    rc |= main_draw_and_save(shot_path, t);
+  }
   return rc;
 }

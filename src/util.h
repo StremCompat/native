@@ -12,6 +12,9 @@ int write_file(const char *path, const void *data, size_t size);
 /* the next character, moving *p past it; invalid bytes come back as U+FFFD */
 uint32_t utf8_next(const char **p);
 
+/* a copy of s on the heap */
+char *str_dup(const char *s);
+
 /* milliseconds since an arbitrary start */
 double now_ms(void);
 

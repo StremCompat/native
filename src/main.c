@@ -8,12 +8,20 @@
 #include "app.h"
 #include "gfx.h"
 #include "gl.h"
+#include "img.h"
+#include "net.h"
+#include "platform.h"
 #include "text.h"
 #include "util.h"
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #define STBIW_WINDOWS_UTF8
 #include "stb_image_write.h"
+
+/* pictures kept on the GPU; the TV builds set their own */
+#ifndef IMG_BUDGET
+#define IMG_BUDGET (96u << 20)
+#endif
 
 static void *gl_lookup(const char *name) { return SDL_GL_GetProcAddress(name); }
 
@@ -43,11 +51,12 @@ static int save_shot(const char *path, int w, int h) {
 
 int main(int argc, char **argv) {
   const char *shot = NULL, *script = NULL;
-  int win_w = 1280, win_h = 720;
+  int win_w = 1280, win_h = 720, port = 8082;
   for (int i = 1; i < argc; i++) {
     if (!strcmp(argv[i], "--shot") && i + 1 < argc) shot = argv[++i];
     else if (!strcmp(argv[i], "--keys") && i + 1 < argc) script = argv[++i];
     else if (!strcmp(argv[i], "--size") && i + 1 < argc) sscanf(argv[++i], "%dx%d", &win_w, &win_h);
+    else if (!strcmp(argv[i], "--port") && i + 1 < argc) port = atoi(argv[++i]);
   }
   if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0) {
     fprintf(stderr, "SDL: %s\n", SDL_GetError());
@@ -74,8 +83,10 @@ int main(int argc, char **argv) {
     fprintf(stderr, "GL: %d entry points missing\n", missing);
     return 1;
   }
-  if (gfx_init() || text_init(app_asset_dir("fonts"))) return 1;
-  if (app_init(argc, argv)) return 1;
+  if (app_init(argc, argv) || gfx_init() || text_init(app_asset_dir("fonts"))) return 1;
+  platform_add_fonts();
+  net_init(port, 3);
+  img_init(IMG_BUDGET);
 
   if (shot) {
     /* offscreen at the design size: the same picture whatever the window */
@@ -85,7 +96,9 @@ int main(int argc, char **argv) {
       return 1;
     }
     text_set_scale(1.0f);
+    img_skip_fades(1);
     int rc = app_run_script(script, shot);
+    net_shutdown();
     SDL_Quit();
     return rc;
   }
@@ -100,10 +113,14 @@ int main(int argc, char **argv) {
     int w, h;
     SDL_GL_GetDrawableSize(win, &w, &h);
     text_set_scale((float)h / SC_DESIGN_H);
-    app_frame(w, h, now_ms());
+    double t = now_ms();
+    net_poll();
+    img_frame(t);
+    app_frame(w, h, t);
     SDL_GL_SwapWindow(win);
     if (app_wants_quit()) running = 0;
   }
+  net_shutdown();
   SDL_GL_DeleteContext(ctx);
   SDL_DestroyWindow(win);
   SDL_Quit();
@@ -112,6 +129,7 @@ int main(int argc, char **argv) {
 
 /* used by the script runner: draw one frame offscreen and keep it */
 int main_draw_and_save(const char *path, double t) {
+  img_frame(t);
   app_frame(SC_DESIGN_W, SC_DESIGN_H, t);
   glFinish();
   return save_shot(path, SC_DESIGN_W, SC_DESIGN_H);

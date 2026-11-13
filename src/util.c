@@ -116,3 +116,10 @@ float ease_out(float t) {
   t = clampf(t, 0, 1);
   return 1 - (1 - t) * (1 - t) * (1 - t);
 }
+
+char *str_dup(const char *s) {
+  size_t n = strlen(s) + 1;
+  char *d = malloc(n);
+  if (d) memcpy(d, s, n);
+  return d;
+}

@@ -14,6 +14,8 @@
 #define ATLAS 1024
 #define CACHE_SLOTS 4096
 #define MAX_FONTS 12
+#define MAX_CANDIDATES 64
+#define BLOCKS (0x110000 >> 8) /* 256-character blocks of Unicode */
 
 typedef struct {
   unsigned char *data;
@@ -31,8 +33,18 @@ typedef struct {
   float advance;           /* surface pixels */
 } glyph;
 
+/* A system font that may cover what Inter does not. It is only read from disk when a
+   character is missing, and kept only if it has it; a block it lacked is not tried again. */
+typedef struct {
+  char *path;
+  int loaded;
+  uint8_t lacks[BLOCKS / 8];
+} candidate;
+
 static font fonts[MAX_FONTS];
-static int nfonts;            /* the first W_COUNT are the Inter weights */
+static int nfonts;            /* the first W_COUNT are the Inter weights, then the fallbacks in use */
+static candidate candidates[MAX_CANDIDATES];
+static int ncandidates;
 static glyph cache[CACHE_SLOTS];
 static sc_tex atlas;
 static int pen_x, pen_y, row_h;
@@ -71,9 +83,8 @@ int text_init(const char *dir) {
 }
 
 int text_add_fallback(const char *path) {
-  if (nfonts >= MAX_FONTS) return -1;
-  if (load_font(&fonts[nfonts], path)) return -1;
-  nfonts++;
+  if (ncandidates >= MAX_CANDIDATES) return -1;
+  candidates[ncandidates++].path = str_dup(path);
   return 0;
 }
 
@@ -86,11 +97,26 @@ void text_set_scale(float s) {
 
 int text_atlas_resets(void) { return resets; }
 
-/* the font that has this character: the weight asked for, else a fallback */
+/* the font that has this character: the weight asked for, else a fallback in use, else the
+   next system font that turns out to have it */
 static int font_for(uint32_t cp, int weight) {
   if (stbtt_FindGlyphIndex(&fonts[weight].info, (int)cp)) return weight;
   for (int i = W_COUNT; i < nfonts; i++)
     if (stbtt_FindGlyphIndex(&fonts[i].info, (int)cp)) return i;
+  uint32_t block = cp >> 8;
+  if (block >= BLOCKS) return weight;
+  for (int i = 0; i < ncandidates && nfonts < MAX_FONTS; i++) {
+    candidate *c = &candidates[i];
+    if (c->loaded || (c->lacks[block / 8] & (1u << (block % 8)))) continue;
+    font *f = &fonts[nfonts];
+    if (!load_font(f, c->path) && stbtt_FindGlyphIndex(&f->info, (int)cp)) {
+      c->loaded = 1;
+      return nfonts++;
+    }
+    free(f->data);
+    memset(f, 0, sizeof *f);
+    c->lacks[block / 8] |= (uint8_t)(1u << (block % 8));
+  }
   return weight;
 }
 
