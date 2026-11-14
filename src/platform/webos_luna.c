@@ -3,8 +3,6 @@
 #include <glib.h>
 #include <stdio.h>
 
-#define APP_ID "io.github.alexesmm.legacytv"
-
 static LSHandle *bus;
 static char error[256];
 
@@ -15,7 +13,7 @@ int luna_ready(void) {
   LSError err;
   LSErrorInit(&err);
   /* the app's own name first; an unnamed handle on systems that refuse it */
-  if (!LSRegister(APP_ID, &bus, &err)) {
+  if (!LSRegister(SC_APP_ID, &bus, &err)) {
     LSErrorFree(&err);
     LSErrorInit(&err);
     if (!LSRegister(NULL, &bus, &err)) {

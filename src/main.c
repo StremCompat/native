@@ -27,6 +27,11 @@
 #define IMG_BUDGET (96u << 20)
 #endif
 
+/* the local server's port: the TV builds set theirs, the computer uses the dev server's */
+#ifndef SC_PORT
+#define SC_PORT 8082
+#endif
+
 static void *gl_lookup(const char *name) { return SDL_GL_GetProcAddress(name); }
 
 typedef struct {
@@ -85,7 +90,7 @@ static int fail(const char *what) {
 
 int main(int argc, char **argv) {
   const char *shot = NULL, *script = NULL;
-  int win_w = 1280, win_h = 720, port = 8082;
+  int win_w = 1280, win_h = 720, port = SC_PORT;
   for (int i = 1; i < argc; i++) {
     if (!strcmp(argv[i], "--shot") && i + 1 < argc) shot = argv[++i];
     else if (!strcmp(argv[i], "--keys") && i + 1 < argc) script = argv[++i];

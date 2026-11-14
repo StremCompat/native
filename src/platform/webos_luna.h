@@ -4,6 +4,12 @@
 
 #include <luna-service2/lunaservice.h>
 
+/* the app's ID, given by build.sh (the native app sits next to the web one, with its own) */
+#ifndef SC_APP_ID
+#define SC_APP_ID "io.github.alexesmm.stremcompat.native"
+#endif
+#define SC_SERVICE_ID SC_APP_ID ".server"
+
 /* registered and attached to the main loop; 0 when the bus refused (luna_error says why) */
 int luna_ready(void);
 const char *luna_error(void);

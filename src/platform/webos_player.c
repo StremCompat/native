@@ -17,10 +17,13 @@
 #include "util.h"
 #include "webos_luna.h"
 
-#define APP_ID "io.github.alexesmm.legacytv"
 #define MEDIA "luna://com.webos.media/"
 
+#define LOAD_LIMIT_MS 30000.0
+
 static char media_id[128], window_id[128], error[256];
+static char last_event[48]; /* the last news from the media service, for a report when it stalls */
+static double loading_since;
 static player_state status = PLAYER_IDLE;
 static int buffering, ntracks, audio_at;
 static double position, duration, start_at;
@@ -65,6 +68,11 @@ static bool on_event(LSHandle *sh, LSMessage *msg, void *ctx) {
   const char *text = LSMessageGetPayload(msg);
   jdoc *d = text ? json_parse(text, strlen(text)) : NULL;
   const jval *e = json_root(d);
+  if (e && e->type == J_OBJ && json_len(e) > 0) {
+    const jval *first = json_at(e, 0);
+    if (first && first->key && strcmp(first->key, "returnValue") && strcmp(first->key, "currentTime"))
+      snprintf(last_event, sizeof last_event, "%s", first->key);
+  }
   if (json_get(e, "currentTime")->type == J_NUM) position = json_num(json_get(e, "currentTime"), position);
   const jval *source = json_get(e, "sourceInfo");
   if (source->type == J_OBJ) {
@@ -106,6 +114,9 @@ static bool on_loaded(LSHandle *sh, LSMessage *msg, void *ctx) {
     char payload[200];
     snprintf(payload, sizeof payload, "{\"mediaId\":\"%s\"}", media_id);
     call("subscribe", payload, on_event, &subscription);
+    /* "loadCompleted" can come before the subscription does; play waits for the load anyway */
+    simple("play");
+    snprintf(last_event, sizeof last_event, "loaded");
   } else {
     status = PLAYER_FAILED;
     snprintf(error, sizeof error, "load: %s", json_str(json_get(json_root(d), "errorText"), text ? text : ""));
@@ -151,11 +162,13 @@ int player_open(const char *url, double start_ms) {
   duration = 0;
   start_at = start_ms;
   buffering = 1;
+  loading_since = now_ms();
+  snprintf(last_event, sizeof last_event, "load asked");
   ntracks = audio_at = 0;
   sbuf p = {0};
   sb_add(&p, "{\"uri\":");
   sb_add_json_str(&p, url);
-  sb_add(&p, ",\"type\":\"media\",\"payload\":{\"option\":{\"appId\":\"" APP_ID "\",\"windowId\":");
+  sb_add(&p, ",\"type\":\"media\",\"payload\":{\"option\":{\"appId\":\"" SC_APP_ID "\",\"windowId\":");
   sb_add_json_str(&p, window_id);
   sb_add(&p, "}}}");
   LSMessageToken token;
@@ -193,7 +206,14 @@ void player_seek(double ms) {
   position = ms;
 }
 
-void player_poll(void) { luna_poll(); }
+/* a video that never starts says so, with what the media service said last */
+void player_poll(void) {
+  luna_poll();
+  if (status == PLAYER_LOADING && now_ms() - loading_since > LOAD_LIMIT_MS) {
+    status = PLAYER_FAILED;
+    snprintf(error, sizeof error, "no picture after 30 s (%s, window %s)", last_event, window_id);
+  }
+}
 
 player_state player_status(void) { return status; }
 int player_buffering(void) { return buffering; }

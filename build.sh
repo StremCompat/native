@@ -32,7 +32,7 @@ case "$TARGET" in
     SYSROOT="$TC/arm-webos-linux-gnueabi/sysroot"
     OUT="$HERE/build/webos"
     mkdir -p "$OUT"
-    "$TC/bin/arm-webos-linux-gnueabi-gcc" $CFLAGS -D_GNU_SOURCE -DAPP_VERSION="\"$VERSION\"" -DIMG_BUDGET="(48u << 20)" -I"$SYSROOT/usr/include/SDL2" \
+    "$TC/bin/arm-webos-linux-gnueabi-gcc" $CFLAGS -D_GNU_SOURCE -DAPP_VERSION="\"$VERSION\"" -DSC_PORT=8083 -DIMG_BUDGET="(48u << 20)" -I"$SYSROOT/usr/include/SDL2" \
       -I"$SYSROOT/usr/include/glib-2.0" -I"$SYSROOT/usr/lib/glib-2.0/include" \
       $SRC "$HERE/src/platform/webos.c" "$HERE/src/platform/webos_player.c" "$HERE/src/platform/webos_luna.c" \
       -Wl,--as-needed -lSDL2 -lluna-service2 -lglib-2.0 -ldl -lpthread -lm -o "$OUT/stremcompat"

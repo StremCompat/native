@@ -20,7 +20,7 @@ Uint32 platform_window_flags(void) { return SDL_WINDOW_FULLSCREEN; }
 /* a notification from the system, which shows even when the app's window is gone */
 void platform_fatal(const char *message) {
   char payload[400];
-  snprintf(payload, sizeof payload, "{\"sourceId\":\"io.github.alexesmm.legacytv\",\"message\":\"");
+  snprintf(payload, sizeof payload, "{\"sourceId\":\"" SC_APP_ID "\",\"message\":\"");
   size_t n = strlen(payload);
   for (const char *c = message; *c && n < sizeof payload - 4; c++)
     if (*c != '"' && *c != '\\' && (unsigned char)*c >= 32) payload[n++] = *c;
@@ -130,7 +130,7 @@ void platform_run_server(void) {
     if (access(nodes[i], X_OK) == 0) node = nodes[i];
   char dir[600], script[700];
   char *base = SDL_GetBasePath(); /* .../usr/palm/applications/<app id>/ */
-  snprintf(dir, sizeof dir, "%s../../services/io.github.alexesmm.legacytv.server", base ? base : "");
+  snprintf(dir, sizeof dir, "%s../../services/" SC_SERVICE_ID, base ? base : "");
   SDL_free(base);
   snprintf(script, sizeof script, "%s/local-server.js", dir);
   if (!node) {
@@ -162,7 +162,7 @@ void platform_run_server(void) {
 void platform_start_server(void) {
   LSMessageToken token;
   snprintf(service_note, sizeof service_note, "service asked, no answer");
-  if (!luna_call("luna://io.github.alexesmm.legacytv.server/start", "{}", start_answered, &token))
+  if (!luna_call("luna://" SC_SERVICE_ID "/start", "{}", start_answered, &token))
     snprintf(service_note, sizeof service_note, "service call refused: %s", luna_error());
   luna_poll();
 }
@@ -184,7 +184,7 @@ static bool install_answered(LSHandle *sh, LSMessage *msg, void *ctx) {
 void platform_install_update(void (*done)(const char *error)) {
   LSMessageToken token;
   install_done = done;
-  if (!luna_call("luna://io.github.alexesmm.legacytv.server/install", "{}", install_answered, &token)) done(luna_error());
+  if (!luna_call("luna://" SC_SERVICE_ID "/install", "{}", install_answered, &token)) done(luna_error());
 }
 
 /* every font file under the folder; the text module opens one only when a character needs it */

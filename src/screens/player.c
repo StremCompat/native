@@ -641,7 +641,8 @@ static void draw_cover(float alpha) {
     float w = 640, h = logo->h * (640.0f / logo->w);
     if (h > 400) w *= 400 / h, h = 400;
     gfx_image(logo, (SC_DESIGN_W - w) / 2, (SC_DESIGN_H - h) / 2, w, h, 0, 1, STRETCH);
-  } else if (info.title) {
+  } else if (info.title && (!info.logo || !info.logo[0] || img_failed(info.logo, 640))) {
+    /* the name only when there is no logo: while it comes its place stays empty */
     float tw = text_width(info.title, 58, W_BOLD);
     text_draw_fit(info.title, tw < 1600 ? (SC_DESIGN_W - tw) / 2 : 160, SC_DESIGN_H / 2 - 35, 1600, 58, W_BOLD, C_WHITE);
   }
@@ -778,7 +779,7 @@ static void draw_paused(void) {
     if (h > 210) w *= 210 / h, h = 210;
     gfx_image(logo, x, y, w, h, 0, 1, STRETCH);
     y += h + 12;
-  } else if (info.title) {
+  } else if (info.title && (!info.logo || !info.logo[0] || img_failed(info.logo, 640))) {
     y += text_draw_wrap(info.title, x, y, SC_DESIGN_W * 0.58f, 62, W_EXTRABOLD, C_WHITE, 2, 67) + 12;
   }
   if (info.season_line) text_draw_fit(info.season_line, x, y, SC_DESIGN_W * 0.58f, 28, W_SEMIBOLD, C_TEXT(0.78f));

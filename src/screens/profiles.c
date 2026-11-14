@@ -34,21 +34,102 @@ static uint32_t hex_color(const char *hex) {
   return SC_RGBA((v >> 16) & 255, (v >> 8) & 255, v & 255, 255);
 }
 
+/* ---------- a PIN: four digits, from the remote's numbers or the keys on screen ---------- */
+enum { PIN_OPEN, PIN_SET, PIN_CLEAR };
+static int pin_mode, pin_purpose, pin_profile, pin_key;
+static char pin[5], pin_title[160];
+static void use_with(int i, const char *code);
+static void pin_sent(net_reply *r, void *user);
+
+static void ask_pin(int purpose, int i, const char *title) {
+  pin_mode = 1;
+  pin_purpose = purpose;
+  pin_profile = i;
+  pin_key = 0;
+  pin[0] = 0;
+  snprintf(pin_title, sizeof pin_title, "%s", title);
+}
+
+static void pin_type(char digit) {
+  size_t n = strlen(pin);
+  if (!digit) {
+    if (n) pin[n - 1] = 0;
+    return;
+  }
+  if (n < 4) pin[n] = digit, pin[n + 1] = 0;
+  if (strlen(pin) < 4) return;
+  pin_mode = 0;
+  if (pin_purpose == PIN_OPEN) return use_with(pin_profile, pin);
+  char body[96];
+  snprintf(body, sizeof body, "{\"index\":%d,\"%s\":\"%s\"}", list[pin_profile].index, pin_purpose == PIN_SET ? "pin" : "current", pin);
+  net_request("/app/profile/pin", body, NET_HIGH, NULL, pin_sent, NULL);
+}
+
+static void pin_keys(app_key k) {
+  if (k == K_BACK) pin_mode = 0;
+  else if (k == K_LEFT && pin_key > 0) pin_key--;
+  else if (k == K_RIGHT && pin_key < 10) pin_key++;
+  else if (k == K_OK) pin_type(pin_key == 10 ? 0 : (char)('0' + (pin_key + 1) % 10));
+}
+
+static void draw_pin(void) {
+  float cy = SC_DESIGN_H * 0.15f + 140;
+  float tw = text_width(pin_title, 40, W_BOLD);
+  ui_line(pin_title, (SC_DESIGN_W - tw) / 2, cy, 56, 40, W_BOLD, C_WHITE);
+  for (int i = 0; i < 4; i++) {
+    float x = SC_DESIGN_W / 2.0f - 2 * 54 + i * 54 + 14;
+    if (i < (int)strlen(pin)) gfx_rect(x, cy + 110, 26, 26, 13, C_WHITE);
+    else gfx_outline(x, cy + 110, 26, 26, 13, 3, C_TEXT(0.55f));
+  }
+  const char *del = tx("pinDelete");
+  float dw = text_width(del, 22, W_BOLD) + 44, total = 10 * 76 + dw, x = (SC_DESIGN_W - total) / 2, ky = cy + 200;
+  for (int i = 0; i < 11; i++) {
+    char label[4];
+    snprintf(label, sizeof label, "%d", (i + 1) % 10);
+    float w = i < 10 ? 64 : dw;
+    int f = i == pin_key;
+    gfx_rect(x, ky, w, 70, 14, f ? C_WHITE : C_TEXT(0.1f));
+    const char *s = i < 10 ? label : del;
+    float size = i < 10 ? 30 : 22, lw = text_width(s, size, W_BOLD);
+    ui_line(s, x + (w - lw) / 2, ky, 70, size, W_BOLD, f ? C_BG : C_WHITE);
+    x += w + 12;
+  }
+}
+
 static void used(const jval *answer, void *user) {
   if ((intptr_t)user != gen) return;
   busy = 0;
   if (json_bool(json_get(answer, "ok"), 0)) {
     home_reload();
     app_show(&home_screen);
+    return;
   }
+  /* a wrong PIN asks again; the account may make it wait a little after several */
+  if (!strcmp(json_str(json_get(answer, "reason"), ""), "wrong")) {
+    char wait[16];
+    int seconds = (int)json_num(json_get(answer, "retryAfter"), 0);
+    snprintf(wait, sizeof wait, "%d", seconds);
+    ui_toast(seconds ? txf("pinWait", wait, NULL) : tx("pinWrong"));
+    pin_mode = 1; /* the same question again */
+    pin[0] = 0;
+  } else ui_toast(tx("profilesUnavailable"));
 }
 
-static void use(int i) {
-  if (busy || i >= count || list[i].locked) return;
+static void use_with(int i, const char *code) {
+  if (busy || i >= count) return;
   busy = 1;
-  char path[64];
-  snprintf(path, sizeof path, "/app/profile?index=%d", list[i].index);
+  char path[96];
+  snprintf(path, sizeof path, "/app/profile?index=%d&pin=%s", list[i].index, code);
   api_get(path, used, (void *)(intptr_t)gen);
+}
+
+/* a protected profile asks its PIN first */
+static void use(int i) {
+  if (i >= count) return;
+  if (!list[i].locked) return use_with(i, "");
+  char number[12];
+  snprintf(number, sizeof number, "%d", list[i].index);
+  ask_pin(PIN_OPEN, i, txf("pinEnter", list[i].name[0] ? list[i].name : txf("profileNumber", number, NULL), NULL));
 }
 
 static void listed(const jval *answer, void *user) {
@@ -67,7 +148,7 @@ static void listed(const jval *answer, void *user) {
     if (json_bool(json_get(r, "current"), 0)) at = count - 1;
   }
   loaded = 1;
-  /* nothing to ask at the start when there is one profile */
+  /* nothing to ask at the start when there is one profile without a PIN */
   if (at_start && count == 1 && !list[0].locked) use(0);
   else if (!count) app_show(&home_screen);
 }
@@ -84,8 +165,8 @@ void profiles_open(int starting) {
 /* ---------- the editor: a new profile ("+") or the focused one, its name, colour, avatar ---------- */
 #define MAX_AVATARS 48
 static const uint32_t colors[] = {0x1E88E5FF, 0xE53935FF, 0x43A047FF, 0xFB8C00FF, 0x8E24AAFF, 0x00ACC1FF, 0xF4511EFF, 0x6D4C41FF};
-enum { E_NAME, E_COLOR, E_AVATAR, E_SAVE, E_COUNT };
-static int editing, edit_index, edit_row, color_at, avatar_at, navatars, typing, on_edit_button;
+enum { E_NAME, E_COLOR, E_AVATAR, E_PIN, E_SAVE, E_COUNT };
+static int editing, edit_index, edit_locked, edit_at, edit_row, color_at, avatar_at, navatars, typing, on_edit_button;
 static char avatar_ids[MAX_AVATARS][64], avatar_urls[MAX_AVATARS][512];
 static keyboard name_kb;
 
@@ -104,12 +185,27 @@ static void open_editor(int i) {
   edit_row = E_NAME;
   typing = 0;
   edit_index = i < count ? list[i].index : 0;
+  edit_locked = i < count && list[i].locked;
+  edit_at = i;
   kb_reset(&name_kb, i < count ? list[i].name : "", 0);
   color_at = 0;
   for (int c = 0; i < count && c < 8; c++)
     if (colors[c] == list[i].color) color_at = c;
   avatar_at = -1;
   api_get("/app/avatars", avatars_came, NULL);
+}
+
+/* the PIN changed (or not): the profiles again, with the editor closed */
+static void pin_sent(net_reply *r, void *user) {
+  (void)user;
+  jdoc *d = r->status == 200 && r->body ? json_parse(r->body, r->len) : NULL;
+  int ok = json_bool(json_get(json_root(d), "ok"), 0);
+  json_free(d);
+  ui_toast(tx(ok ? (pin_purpose == PIN_SET ? "pinSaved" : "pinRemoved") : "pinNotSaved"));
+  if (!ok) return;
+  editing = 0;
+  gen++;
+  api_get("/app/profiles", listed, (void *)(intptr_t)gen);
 }
 
 static void saved(net_reply *r, void *user) {
@@ -146,14 +242,16 @@ static void editor_key(app_key k) {
     return;
   }
   if (k == K_BACK) editing = 0;
-  else if (k == K_UP && edit_row > 0) edit_row--;
-  else if (k == K_DOWN && edit_row < E_COUNT - 1) edit_row++;
+  /* a new profile gets its PIN once it exists */
+  else if (k == K_UP && edit_row > 0) edit_row -= edit_row == E_SAVE && !edit_index ? 2 : 1;
+  else if (k == K_DOWN && edit_row < E_COUNT - 1) edit_row += edit_row == E_AVATAR && !edit_index ? 2 : 1;
   else if (edit_row == E_COLOR && k == K_LEFT && color_at > 0) color_at--;
   else if (edit_row == E_COLOR && k == K_RIGHT && color_at < 7) color_at++;
   else if (edit_row == E_AVATAR && k == K_LEFT && avatar_at > -1) avatar_at--;
   else if (edit_row == E_AVATAR && k == K_RIGHT && avatar_at < navatars - 1) avatar_at++;
   else if (k == K_OK && edit_row == E_NAME) typing = 1;
   else if (k == K_OK && edit_row == E_SAVE) save();
+  else if (k == K_OK && edit_row == E_PIN) ask_pin(edit_locked ? PIN_CLEAR : PIN_SET, edit_at, tx(edit_locked ? "pinCurrent" : "pinNew"));
 }
 
 static void draw_editor(void) {
@@ -186,7 +284,16 @@ static void draw_editor(void) {
     if (a == avatar_at) gfx_outline(x - 6, y - 6, 112, 112, 56, edit_row == E_AVATAR ? 5 : 3, edit_row == E_AVATAR ? C_WHITE : C_TEXT(0.5f));
   }
   gfx_pop_clip();
-  y += 150;
+  y += 136;
+  if (edit_index) {
+    const char *pl = tx(edit_locked ? "pinRemove" : "pinSet");
+    float pw = text_width(pl, 22, W_BOLD) + 60;
+    int pf = edit_row == E_PIN;
+    gfx_rect(cx - pw / 2, y, pw, 52, 26, pf ? C_WHITE : 0);
+    if (!pf) gfx_outline(cx - pw / 2, y, pw, 52, 26, 2, C_TEXT(0.25f));
+    ui_line(pl, cx - pw / 2 + 30, y, 52, 22, W_BOLD, pf ? C_BG : C_TEXT(0.75f));
+  }
+  y += 82;
   const char *label = tx("save");
   float bw = text_width(label, 28, W_BOLD) + 80;
   f = edit_row == E_SAVE;
@@ -200,6 +307,7 @@ static void draw_editor(void) {
 }
 
 static void key(app_key k) {
+  if (pin_mode) return pin_keys(k);
   if (editing) return editor_key(k);
   if (on_edit_button) {
     if (k == K_UP) on_edit_button = 0;
@@ -217,6 +325,7 @@ static void key(app_key k) {
 }
 
 static void text(const char *utf8) {
+  if (pin_mode && utf8[0] >= '0' && utf8[0] <= '9' && !utf8[1]) return pin_type(utf8[0]);
   if (typing) kb_type(&name_kb, utf8);
 }
 
@@ -227,6 +336,7 @@ static void frame(double t, float dt) {
   const char *title = tx("whoIsWatching");
   text_draw(title, (SC_DESIGN_W - text_width(title, 64, W_EXTRABOLD)) / 2, SC_DESIGN_H * 0.15f, 64, W_EXTRABOLD, C_WHITE);
   if (!loaded) return;
+  if (pin_mode) return draw_pin();
   if (editing) return draw_editor();
   int places = count + (count < MAX_PROFILES);
   float total = places * CARD + (places - 1) * FACE_GAP, x = (SC_DESIGN_W - total) / 2, y = SC_DESIGN_H * 0.15f + 77 + 70;
@@ -284,6 +394,6 @@ static void frame(double t, float dt) {
   text_draw(hint, (SC_DESIGN_W - text_width(hint, 22, W_REGULAR)) / 2, SC_DESIGN_H - 48 - 27, 22, W_REGULAR, C_TEXT(0.55f));
 }
 
-static void enter(void) { editing = on_edit_button = 0; }
+static void enter(void) { editing = on_edit_button = pin_mode = 0; }
 
 const screen profiles_screen = {enter, key, frame, text, 0};
