@@ -328,10 +328,7 @@ static void draw_rows(int featured, float dt) {
     float h = row_height(r), step = card_step(r);
     if (y + h > area - 20 && y < SC_DESIGN_H) {
       int is_cur = i == cur && !featured && !nav_has_focus();
-      int vis = (int)(CONTENT_W / step);
-      if (vis < 2) vis = 2;
-      float target = r->col > vis - 2 ? (r->col - (vis - 2)) * step : 0;
-      r->scroll = ui_approach(r->scroll, target, dt, 70);
+      r->scroll = ui_approach(r->scroll, ui_row_offset(r->col, step, CONTENT_W), dt, 70);
       text_draw_fit(r->title, ROW_LEFT + 2, y + 14, CONTENT_W * 0.8f, 26, W_BOLD, C_TEXT(0.78f));
       float cy = y + ROW_TITLE_H;
       if (!r->n) {
@@ -360,7 +357,7 @@ static void enter(void) {
 static void key(app_key k) {
   last_key = clock_now;
   if (nav_has_focus()) {
-    if (nav_key(k) == NAV_LEAVE) app_quit();
+    nav_key(k);
     return;
   }
   if (at_featured()) {

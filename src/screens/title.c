@@ -246,7 +246,7 @@ static void control_key(void) {
 
 static void key(app_key k) {
   if (nav_has_focus()) {
-    if (nav_key(k) == NAV_LEAVE) app_quit();
+    nav_key(k);
     return;
   }
   if (k == K_BACK) {
@@ -393,10 +393,8 @@ static void draw_episode(const episode *ep, float x, float y, int focused) {
 }
 
 static void draw_episodes(float y, float dt) {
-  int n = shown_count(), vis = (int)(1744 / EP_STEP);
-  if (vis < 2) vis = 2;
-  float target = ep_at > vis - 2 ? (ep_at - (vis - 2)) * EP_STEP : 0;
-  ep_scroll = ui_approach(ep_scroll, target, dt, 50);
+  int n = shown_count();
+  ep_scroll = ui_approach(ep_scroll, ui_row_offset(ep_at, EP_STEP, 1744), dt, 50);
   gfx_push_clip(128, y - 12, SC_DESIGN_W - 128, EP_H + 24);
   for (int i = 0; i < n; i++) {
     float x = LEFT + 7 + i * EP_STEP - ep_scroll;

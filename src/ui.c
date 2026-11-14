@@ -82,6 +82,12 @@ void backdrop_draw(backdrop *b, float x, float h, float opacity, float dt) {
   if (now) gfx_image(now, x, 0, SC_DESIGN_W - x, h, 0, opacity * (before ? b->mix : 1), COVER_TOP);
 }
 
+float ui_row_offset(int focused, float step, float width) {
+  int fits = (int)(width / step);
+  if (fits < 2) fits = 2;
+  return focused > fits - 2 ? (focused - (fits - 2)) * step : 0;
+}
+
 void menu_begin(menu *m, const char *title) {
   snprintf(m->title, sizeof m->title, "%s", title ? title : "");
   m->n = m->at = 0;
@@ -148,6 +154,8 @@ void card_read(card *c, const jval *v) {
   c->backdrop = dup_or_null(json_str(json_get(v, "backdrop"), NULL));
   c->subtitle = dup_or_null(json_str(json_get(v, "subtitle"), NULL));
   c->video_id = dup_or_null(json_str(json_get(v, "videoId"), NULL));
+  c->info = dup_or_null(json_str(json_get(v, "info"), NULL));
+  c->description = dup_or_null(json_str(json_get(v, "description"), NULL));
   c->progress = (float)json_num(json_get(v, "progress"), 0);
   c->watched = json_bool(json_get(v, "watched"), 0);
   c->up_next = json_bool(json_get(v, "upNext"), 0);
@@ -161,6 +169,8 @@ void card_clear(card *c) {
   free(c->backdrop);
   free(c->subtitle);
   free(c->video_id);
+  free(c->info);
+  free(c->description);
   memset(c, 0, sizeof *c);
 }
 
@@ -190,6 +200,13 @@ static void wide_label(const card *c, float x, float y, float w, float h) {
     gfx_rect(x + 14, y + h - 18, bw, 6, 3, C_TEXT(0.28f));
     gfx_rect(x + 14, y + h - 18, bw * clampf(c->progress, 0, 1), 6, 3, C_WHITE);
   }
+}
+
+void ui_card_name(const card *c, float x, float y, int focused) {
+  if (!c->name) return;
+  if (focused) y -= 6;
+  gfx_gradient(x, y + CARD_H - 90, CARD_W, 90, CARD_RADIUS, SC_RGBA(0, 0, 0, 0), SC_RGBA(0, 0, 0, 235), 1);
+  text_draw_fit(c->name, x + 15, y + CARD_H - 13 - text_line_height(24), CARD_W - 30, 24, W_SEMIBOLD, C_WHITE);
 }
 
 void ui_card(const card *c, float x, float y, int wide, int focused) {

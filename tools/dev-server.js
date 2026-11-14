@@ -155,6 +155,16 @@ var addon = http.createServer(function (req, res) {
     return res.end(pic[1] === 'poster' ? png(300, 450, color, dark) : png(1280, 720, color, dark));
   }
   var streams = /^\/stream\/(movie|series)\/[^/]+\.json$/.test(url);
+  /* search: every title of a type whose name has the words */
+  var found = /^\/catalog\/(movie|series)\/top\/search=([^/]+)\.json$/.exec(url);
+  if (found) {
+    var words = decodeURIComponent(found[2]).toLowerCase();
+    var metas = catalog(found[1], 0).metas.filter(function (m) {
+      return m.name.toLowerCase().indexOf(words) >= 0;
+    });
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ metas: metas }));
+  }
   var answer = streams ? { streams: STREAMS } : meta ? { meta: withEpisodes(title(Number(meta[2]), meta[1])) } : answers[url];
   res.writeHead(answer ? 200 : 404, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify(answer || { error: 'not found' }));

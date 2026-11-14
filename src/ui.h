@@ -65,9 +65,13 @@ int menu_key(menu *m, int key);
 /* x is its left edge, bottom where it ends */
 void menu_draw(const menu *m, float x, float bottom);
 
+/* where a row of cards stands so the focused one shows: it moves only once the focus nears
+   the right edge, keeping one card after it in sight (web: slideRow) */
+float ui_row_offset(int focused, float step, float width);
+
 /* a title as a row shows it (the server decides its pictures and its lines) */
 typedef struct {
-  char *id, *type, *name, *art, *backdrop, *subtitle, *video_id;
+  char *id, *type, *name, *art, *backdrop, *subtitle, *video_id, *info, *description;
   float progress;
   int watched, up_next;
 } card;
@@ -82,5 +86,7 @@ void card_clear(card *c);
 #define WIDE_H 225.0f
 #define CARD_GAP 20.0f
 void ui_card(const card *c, float x, float y, int wide, int focused);
+/* the name over the bottom of a poster card (.titlelabel), for rows that name their titles */
+void ui_card_name(const card *c, float x, float y, int focused);
 
 #endif

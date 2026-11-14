@@ -1,6 +1,7 @@
 #include "nav.h"
 
 #include "api.h"
+#include "screens.h"
 #include "gfx.h"
 #include "text.h"
 #include "ui.h"
@@ -34,7 +35,15 @@ int nav_key(app_key k) {
   if (k == K_UP && focused > 0) focused--;
   else if (k == K_DOWN && focused < NAV_COUNT - 1) focused++;
   else if (k == K_RIGHT || k == K_BACK) focused = -1;
-  else if (k == K_OK) return focused;
+  else if (k == K_OK) {
+    int chosen = focused;
+    focused = -1;
+    /* the sections are the screens at the bottom of the stack */
+    if (chosen == NAV_LEAVE) app_quit();
+    else if (chosen == NAV_HOME) app_show(&home_screen);
+    else if (chosen == NAV_SEARCH) app_show(&search_screen);
+    return chosen;
+  }
   return -1;
 }
 

@@ -11,7 +11,7 @@ typedef enum { NAV_SEARCH, NAV_HOME, NAV_DISCOVER, NAV_LIBRARY, NAV_ADDONS, NAV_
 void nav_focus(nav_item current);
 int nav_has_focus(void);
 /* a key while the rail has the focus: Right or Back give the focus back to the screen; OK
-   returns the item chosen, otherwise -1 */
+   opens the section chosen (or leaves the app) and returns it, otherwise -1 */
 int nav_key(app_key k);
 void nav_draw(nav_item current, float dt);
 
