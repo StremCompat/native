@@ -28,5 +28,7 @@ int nav_key(app_key k);
 void nav_draw(nav_item current, float dt);
 /* a newer version was found: the update item shows above leaving */
 void nav_offer_update(const char *version);
+/* the Calendar is for Stremio accounts; a Nuvio one does not show it */
+void nav_show_calendar(int shown);
 
 #endif

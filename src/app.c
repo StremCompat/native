@@ -6,6 +6,7 @@
 
 #include "api.h"
 #include "json.h"
+#include "nav.h"
 #include "gfx.h"
 #include "img.h"
 #include "net.h"
@@ -131,6 +132,7 @@ void app_ready(void) {
   /* signed in: Home, or for a Nuvio account who is watching first; otherwise signing in */
   jdoc *d = r.status == 200 && r.body ? json_parse(r.body, r.len) : NULL;
   const jval *st = json_root(d);
+  nav_show_calendar(strcmp(json_str(json_get(st, "provider"), ""), "nuvio") != 0);
   if (!json_bool(json_get(st, "signedIn"), 0)) app_show(&login_screen);
   else if (!strcmp(json_str(json_get(st, "provider"), ""), "nuvio")) profiles_open(1);
   else app_show(&home_screen);

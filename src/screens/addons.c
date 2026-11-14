@@ -6,8 +6,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "addr.h"
 #include "api.h"
-#include "keyboard.h"
 #include "nav.h"
 #include "net.h"
 #include "screens.h"
@@ -27,10 +27,9 @@ typedef struct {
 } addon;
 
 static addon mine[MAX_ADDONS], store[MAX_ADDONS];
-static int nmine, nstore, loaded, store_loaded, in_store, typing, armed = -1;
+static int nmine, nstore, loaded, store_loaded, in_store, armed = -1;
 static int at; /* 0..2 the buttons, then the list (in the store, the list alone) */
 static float scroll;
-static keyboard kb;
 
 static int first(void) { return in_store ? 0 : BUTTONS; }
 static int count(void) { return in_store ? nstore : nmine; }
@@ -99,6 +98,9 @@ static void change(const char *url, int remove) {
   sb_free(&b);
 }
 
+/* typed, or pasted from the phone (addr.c) */
+static void added_by_address(const char *url) { change(url, 0); }
+
 static void activate(void) {
   if (!in_store && at == 0) {
     in_store = 1;
@@ -106,11 +108,7 @@ static void activate(void) {
     if (!store_loaded) api_get("/addons/store", store_came, NULL);
     return;
   }
-  if (!in_store && at == 1) {
-    typing = 1;
-    kb_reset(&kb, "", 0);
-    return;
-  }
+  if (!in_store && at == 1) return addr_open(tx("addAddon"), ADDR_URL, added_by_address);
   if (!in_store && at == 2) return sync_now(0);
   int i = at - first();
   if (i < 0 || i >= count()) return;
@@ -126,15 +124,7 @@ static void activate(void) {
 }
 
 static void key(app_key k) {
-  if (typing) {
-    int r = kb_key(&kb, k);
-    if (k == K_BACK) typing = 0;
-    else if (r == KB_DONE) {
-      typing = 0;
-      if (kb.text[0]) change(kb.text, 0);
-    }
-    return;
-  }
+  if (addr_active()) return addr_key(k);
   if (nav_has_focus()) {
     nav_key(k);
     return;
@@ -152,12 +142,12 @@ static void key(app_key k) {
 }
 
 static void text(const char *utf8) {
-  if (typing) kb_type(&kb, utf8);
+  if (addr_active()) addr_text(utf8);
 }
 
 static void frame(double t, float dt) {
   (void)t;
-  int nav = nav_has_focus() || typing;
+  int nav = nav_has_focus() || addr_active();
   text_draw(tx(in_store ? "addonStore" : "addonsGroup"), LEFT, TOP, 50, W_EXTRABOLD, C_WHITE);
   text_draw_fit(tx("addonsHint"), LEFT, TOP + 69, SC_DESIGN_W - LEFT - 48 - 760, 24, W_REGULAR, C_TEXT(0.72f));
   if (!in_store) {
@@ -194,19 +184,12 @@ static void frame(double t, float dt) {
   else if (!in_store && loaded && !nmine) text_draw(tx("noAddons"), LEFT, LIST_Y, 26, W_REGULAR, C_TEXT(0.72f));
   gfx_pop_clip();
   nav_draw(NAV_ADDONS, dt);
-  if (typing) {
-    float kw = 13 * 72 - 8, kx = (SC_DESIGN_W - kw) / 2, ky = SC_DESIGN_H - 360;
-    gfx_rect(kx - 30, ky - 130, kw + 60, 460, 18, SC_RGBA(20, 20, 22, 250));
-    text_draw(tx("addonUrlHint"), kx, ky - 110, 22, W_BOLD, C_TEXT(0.7f));
-    gfx_rect(kx, ky - 72, kw, 56, 10, C_TEXT(0.1f));
-    text_draw_fit(kb.text, kx + 18, ky - 72 + (56 - text_line_height(26)) / 2, kw - 36, 26, W_REGULAR, C_WHITE);
-    kb_draw(&kb, kx, ky);
-  }
+  addr_draw();
 }
 
 static void enter(void) {
   at = 0;
-  in_store = typing = 0;
+  in_store = 0;
   armed = -1;
   api_get("/app/addons", listed, NULL);
 }

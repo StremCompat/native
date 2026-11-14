@@ -49,6 +49,8 @@ void sources_open_next(const char *type, const char *id, const char *video);
 void player_start(const char *type, const char *id, const char *vid, int seq);
 /* a picture straight from an address (a live channel); live has no length */
 void player_play_address(const char *url, const char *title, int live);
+/* Channels, with what = 1 the add-a-list panel open, 2 the lists (Settings > Channels) */
+void channels_open(int what);
 /* the title's trailer, inside the app, where a free source has one */
 void player_play_trailer(const char *type, const char *id);
 

@@ -216,7 +216,8 @@ static void run_action(const item *it) {
     return;
   }
   if (!strcmp(it->k, "__rows")) return app_push(&rows_screen);
-  if (!strcmp(it->k, "__m3u")) return app_show(&channels_screen);
+  if (!strcmp(it->k, "__m3u")) return channels_open(1);
+  if (!strcmp(it->k, "__m3uLists")) return channels_open(2);
   if (!strcmp(it->k, "__reload")) {
     api_load_strings();
     home_reload();

@@ -99,7 +99,7 @@ static void format_time(char *out, size_t size, double ms) {
 /* ---------- what is reported to the server ---------- */
 static void report(const char *event) {
   double d = player_duration();
-  if (!info.id || !info.type || d <= 0) return;
+  if (!info.id || !info.type || d <= 0 || live) return;
   sbuf b = {0};
   sb_add(&b, "{\"type\":");
   sb_add_json_str(&b, info.type);
@@ -285,7 +285,8 @@ void player_start(const char *type, const char *id, const char *vid, int seq) {
   want_id = str_dup(id);
   want_vid = str_dup(vid);
   resuming = seq < 0;
-  live = 0;
+  /* a channel of an addon plays live: no progress and no seeking, like an M3U one */
+  live = !strcmp(type, "tv") || !strcmp(type, "channel");
   mode = MODE_VIDEO;
   button = B_PLAY;
   seek_target = seek_base = -1;

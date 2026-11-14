@@ -29,10 +29,13 @@ static const struct {
 
 static int focused = -1; /* the chip with the focus, or -1 while the screen has it */
 static char update_version[32];
+static int calendar_shown = 1;
 
 void nav_offer_update(const char *version) { snprintf(update_version, sizeof update_version, "%s", version); }
+void nav_show_calendar(int shown) { calendar_shown = shown; }
 
-static int present(int i) { return i != NAV_UPDATE || update_version[0]; }
+/* Update only when a newer version is; the Calendar only for Stremio accounts */
+static int present(int i) { return (i != NAV_UPDATE || update_version[0]) && (i != NAV_CALENDAR || calendar_shown); }
 static float open;      /* 0..1: the panel and the names fading in */
 
 void nav_focus(nav_item current) { focused = (int)current; }
@@ -62,10 +65,17 @@ int nav_key(app_key k) {
   return -1;
 }
 
+/* the sections centred, closing up where one is not shown (the Calendar for Nuvio) */
 static float chip_y(int i) {
   if (i == NAV_LEAVE) return SC_DESIGN_H - 34 - CHIP_H;
   if (i == NAV_UPDATE) return SC_DESIGN_H - 98 - CHIP_H;
-  return (SC_DESIGN_H - (NAV_UPDATE * CHIP_STEP)) / 2 + 4 + i * CHIP_STEP;
+  int shown = 0, at = 0;
+  for (int s = 0; s < NAV_UPDATE; s++)
+    if (present(s)) {
+      if (s < i) at++;
+      shown++;
+    }
+  return (SC_DESIGN_H - (shown * CHIP_STEP)) / 2 + 4 + at * CHIP_STEP;
 }
 
 void nav_draw(nav_item current, float dt) {
