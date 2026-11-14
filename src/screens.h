@@ -19,7 +19,7 @@ typedef struct {
 
 extern const screen home_screen, title_screen, sources_screen, player_screen, login_screen, profiles_screen, search_screen,
     library_screen, discover_screen, settings_screen, addons_screen,
-    card_menu_screen, similar_screen;
+    card_menu_screen, similar_screen, calendar_screen, channels_screen;
 
 /* the first screen, with nothing to go back to */
 void app_show(const screen *s);
@@ -41,6 +41,8 @@ void sources_open(const char *type, const char *id, const char *video, const cha
 void sources_open_next(const char *type, const char *id, const char *video);
 /* a source of the last search by its number, or with seq < 0 the one played last time */
 void player_start(const char *type, const char *id, const char *vid, int seq);
+/* a picture straight from an address (a live channel); live has no length */
+void player_play_address(const char *url, const char *title, int live);
 /* the title's trailer, inside the app, where a free source has one */
 void player_play_trailer(const char *type, const char *id);
 

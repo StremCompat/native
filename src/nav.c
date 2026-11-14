@@ -7,7 +7,7 @@
 #include "ui.h"
 #include "util.h"
 
-/* nav.css: chips of 60 x 56 at x 34, six of them centred, leave at the bottom */
+/* nav.css: chips of 60 x 56 at x 34, centred, leave at the bottom */
 #define CHIP_X 34.0f
 #define CHIP_W 60.0f
 #define CHIP_H 56.0f
@@ -19,9 +19,9 @@ static const struct {
   icon_id icon;
   const char *label;
 } items[NAV_COUNT] = {
-    {ICON_SEARCH, "navSearch"},   {ICON_HOME, "navHome"},         {ICON_DISCOVER, "navDiscover"},
-    {ICON_LIBRARY, "navLibrary"}, {ICON_ADDONS, "navAddons"},     {ICON_SETTINGS, "navSettings"},
-    {ICON_LEAVE, "exitLeave"},
+    {ICON_SEARCH, "navSearch"},     {ICON_HOME, "navHome"},         {ICON_DISCOVER, "navDiscover"},
+    {ICON_LIBRARY, "navLibrary"},   {ICON_CALENDAR, "navCalendar"}, {ICON_CHANNELS, "navChannels"},
+    {ICON_ADDONS, "navAddons"},     {ICON_SETTINGS, "navSettings"}, {ICON_LEAVE, "exitLeave"},
 };
 
 static int focused = -1; /* the chip with the focus, or -1 while the screen has it */
@@ -46,6 +46,8 @@ int nav_key(app_key k) {
     else if (chosen == NAV_DISCOVER) app_show(&discover_screen);
     else if (chosen == NAV_SETTINGS) app_show(&settings_screen);
     else if (chosen == NAV_ADDONS) app_show(&addons_screen);
+    else if (chosen == NAV_CALENDAR) app_show(&calendar_screen);
+    else if (chosen == NAV_CHANNELS) app_show(&channels_screen);
     return chosen;
   }
   return -1;

@@ -30,6 +30,8 @@ typedef enum {
   ICON_REWIND,
   ICON_FORWARD,
   ICON_GEAR,
+  ICON_CALENDAR,
+  ICON_CHANNELS,
   ICON_COUNT
 } icon_id;
 

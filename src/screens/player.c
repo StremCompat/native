@@ -33,6 +33,7 @@ typedef struct {
 
 static play_info info;
 static int gen, ready, mode, button = B_PLAY, seek_step = 10, resuming;
+static int live; /* a channel: no length, no seeking, nothing kept */
 
 /* the menu over the buttons: what it lists, and the episodes and sources it got for that */
 enum { VIEW_MEDIA, VIEW_AUDIO, VIEW_SUBS, VIEW_EPISODES, VIEW_SOURCES, VIEW_SETTINGS };
@@ -189,17 +190,12 @@ static void started(const jval *answer, void *user) {
   ready = 1;
 }
 
-/* a trailer: only the picture and the bar, nothing kept of it */
-static void trailer_came(const jval *answer, void *user) {
-  if ((intptr_t)user != gen) return;
-  const char *url = json_str(json_get(answer, "url"), NULL);
-  if (!url) {
-    ui_toast(json_str(json_get(answer, "error"), tx("trailerUnavailable")));
-    return;
-  }
+void player_play_address(const char *url, const char *title, int is_live) {
+  gen++;
   clear_info();
   info.url = str_dup(url);
-  info.title = copy(json_get(answer, "name"));
+  info.title = title ? str_dup(title) : NULL;
+  live = is_live;
   mode = MODE_VIDEO;
   button = B_PLAY;
   seek_target = seek_base = -1;
@@ -208,6 +204,14 @@ static void trailer_came(const jval *answer, void *user) {
   player_open(info.url, 0);
   ready = 1;
   app_push(&player_screen);
+}
+
+/* a trailer: only the picture and the bar, nothing kept of it */
+static void trailer_came(const jval *answer, void *user) {
+  if ((intptr_t)user != gen) return;
+  const char *url = json_str(json_get(answer, "url"), NULL);
+  if (!url) ui_toast(json_str(json_get(answer, "error"), tx("trailerUnavailable")));
+  else player_play_address(url, json_str(json_get(answer, "name"), NULL), 0);
 }
 
 void player_play_trailer(const char *type, const char *id) {
@@ -234,6 +238,7 @@ void player_start(const char *type, const char *id, const char *vid, int seq) {
   want_id = str_dup(id);
   want_vid = str_dup(vid);
   resuming = seq < 0;
+  live = 0;
   mode = MODE_VIDEO;
   button = B_PLAY;
   seek_target = seek_base = -1;
@@ -287,7 +292,7 @@ static void commit_seek(void) {
 }
 
 static void seek_by(double seconds) {
-  if (player_duration() <= 0) return;
+  if (live || player_duration() <= 0) return;
   if (seek_target < 0) {
     seek_base = player_position();
     seek_target = seek_base;
@@ -580,9 +585,10 @@ static void draw_bar(void) {
   format_time(now, sizeof now, at);
   format_time(total, sizeof total, d);
   format_time(left, sizeof left, d - at);
-  snprintf(times, sizeof times, "%s / %s   -%s", now, total, left);
+  if (live) snprintf(times, sizeof times, "%s", tx("liveNow"));
+  else snprintf(times, sizeof times, "%s / %s   -%s", now, total, left);
   float tw = text_width(times, 26, W_REGULAR);
-  float bar_w = SC_DESIGN_W - 104 - tw - 48, frac = d > 0 ? (float)clampf((float)(at / d), 0, 1) : 0;
+  float bar_w = SC_DESIGN_W - 104 - tw - 48, frac = live ? 1 : d > 0 ? (float)clampf((float)(at / d), 0, 1) : 0;
   int seek_focus = mode == MODE_SEEK, seeking = seek_target >= 0;
   float bh = seek_focus || seeking ? 12 : 8;
   ui_line(times, x + bar_w + 48, y + 4 - 18, 36, 26, W_REGULAR, C_TEXT(0.92f));
@@ -715,7 +721,7 @@ static void frame(double t, float dt) {
     draw_failure();
     return;
   }
-  if (!ready || st == PLAYER_LOADING || player_duration() <= 0) {
+  if (!ready || st == PLAYER_LOADING || (!live && player_duration() <= 0)) {
     draw_cover(1);
   } else {
     if (player_buffering()) gfx_rect(0, 0, SC_DESIGN_W, SC_DESIGN_H, 0, SC_RGBA(10, 10, 11, 128));

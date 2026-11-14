@@ -86,19 +86,20 @@ var manifest = {
   name: 'Development',
   version: '1.0.0',
   resources: ['catalog', 'meta', 'stream'],
-  types: ['movie', 'series'],
+  types: ['movie', 'series', 'tv'],
   idPrefixes: ['dev'],
   catalogs: [
     { type: 'movie', id: 'top', name: 'Popular' },
     { type: 'series', id: 'trending', name: 'Trending' },
-    { type: 'movie', id: 'new', name: 'New' }
+    { type: 'movie', id: 'new', name: 'New' },
+    { type: 'tv', id: 'live', name: 'Live' }
   ]
 };
 /* two seasons, the last episode still to air */
 function withEpisodes(t) {
   if (t.type !== 'series') return t;
   var day = 86400000,
-    start = Date.now() - 120 * day;
+    start = Date.now() - 70 * day;
   t.videos = [];
   [8, 6].forEach(function (count, s) {
     for (var e = 1; e <= count; e++)
@@ -138,13 +139,31 @@ var answers = {
   '/manifest.json': manifest,
   '/catalog/movie/top.json': catalog('movie', 0),
   '/catalog/series/trending.json': catalog('series', 3),
-  '/catalog/movie/new.json': catalog('movie', 6)
+  '/catalog/movie/new.json': catalog('movie', 6),
+  '/catalog/tv/live.json': {
+    metas: ['News 24', 'Sports One', 'Movies Max', 'Kids Fun', 'Music Hits'].map(function (name, i) {
+      return { id: 'devtv' + i, type: 'tv', name: name, logo: base + '/poster/' + i + '.png' };
+    })
+  }
 };
 
 var addon = http.createServer(function (req, res) {
   var url = req.url.split('?')[0],
     pic = /^\/(poster|backdrop)\/(\d+)\.png$/.exec(url),
     meta = /^\/meta\/(movie|series)\/dev[ms](\d+)\.json$/.exec(url);
+  /* an M3U list for the Channels screen */
+  if (url === '/list.m3u') {
+    res.writeHead(200, { 'Content-Type': 'audio/x-mpegurl' });
+    return res.end(
+      '#EXTM3U\n' +
+        ['World', 'Cinema', 'Weather']
+          .map(function (n, i) {
+            return '#EXTINF:-1 tvg-logo="' + base + '/poster/' + (i + 2) + '.png" group-title="Free TV",' + n + '\n' + base + '/live' + i + '.m3u8';
+          })
+          .join('\n') +
+        '\n'
+    );
+  }
   if (pic) {
     var i = Number(pic[2]),
       color = palette[i % palette.length],
@@ -178,6 +197,18 @@ function account() {
       user: JSON.stringify({ _id: 'dev1', email: 'dev@example.com' }),
       addons: JSON.stringify([{ transportUrl: base + '/manifest.json', manifest: manifest }])
     };
+  /* a followed series, for the calendar */
+  var show = title(3, 'series');
+  state['lib_dev1_' + show.id] = JSON.stringify({
+    _id: show.id,
+    type: 'series',
+    name: show.name,
+    poster: show.poster,
+    background: show.background,
+    removed: false,
+    state: { timeOffset: 600000, duration: 2400000, video_id: show.id + ':1:2' },
+    _mtime: new Date(now - 5000).toISOString()
+  });
   [2, 5, 8].forEach(function (i, n) {
     var it = title(i, 'movie');
     state['lib_dev1_' + it.id] = JSON.stringify({

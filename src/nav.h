@@ -1,11 +1,22 @@
-/* The rail of icons on the left of the main screens (search, home, discover, library, addons,
-   settings, and leave at the bottom), with their names shown while it has the focus. */
+/* The rail of icons on the left of the main screens (search, home, discover, library, calendar,
+   channels, addons, settings, and leave at the bottom), with their names shown while it has the focus. */
 #ifndef SC_NAV_H
 #define SC_NAV_H
 
 #include "app.h"
 
-typedef enum { NAV_SEARCH, NAV_HOME, NAV_DISCOVER, NAV_LIBRARY, NAV_ADDONS, NAV_SETTINGS, NAV_LEAVE, NAV_COUNT } nav_item;
+typedef enum {
+  NAV_SEARCH,
+  NAV_HOME,
+  NAV_DISCOVER,
+  NAV_LIBRARY,
+  NAV_CALENDAR,
+  NAV_CHANNELS,
+  NAV_ADDONS,
+  NAV_SETTINGS,
+  NAV_LEAVE,
+  NAV_COUNT
+} nav_item;
 
 /* the rail takes the focus, on the screen it belongs to */
 void nav_focus(nav_item current);

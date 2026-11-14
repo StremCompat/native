@@ -56,7 +56,13 @@ function playerIcons() {
   return out;
 }
 
-var icons = navIcons().concat(shapeIcons(), playerIcons());
+/* the native interface's own sections, drawn as outlines like the rail's */
+var OWN_ICONS = [
+  { name: 'calendar', body: '<rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/>', outline: true },
+  { name: 'channels', body: '<rect x="3" y="6" width="18" height="13" rx="2"/><path d="M8 3l4 3 4-3"/>', outline: true }
+];
+
+var icons = navIcons().concat(shapeIcons(), playerIcons(), OWN_ICONS);
 var rows = Math.ceil(icons.length / COLUMNS);
 var width = CELL * COLUMNS,
   height = CELL * rows;
