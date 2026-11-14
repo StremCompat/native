@@ -14,7 +14,8 @@ typedef struct {
   void (*text)(const char *utf8);
 } screen;
 
-extern const screen home_screen, title_screen, sources_screen, player_screen, login_screen, profiles_screen, search_screen;
+extern const screen home_screen, title_screen, sources_screen, player_screen, login_screen, profiles_screen, search_screen,
+    library_screen, discover_screen;
 
 /* the first screen, with nothing to go back to */
 void app_show(const screen *s);

@@ -42,6 +42,8 @@ int nav_key(app_key k) {
     if (chosen == NAV_LEAVE) app_quit();
     else if (chosen == NAV_HOME) app_show(&home_screen);
     else if (chosen == NAV_SEARCH) app_show(&search_screen);
+    else if (chosen == NAV_LIBRARY) app_show(&library_screen);
+    else if (chosen == NAV_DISCOVER) app_show(&discover_screen);
     return chosen;
   }
   return -1;

@@ -202,15 +202,15 @@ static void wide_label(const card *c, float x, float y, float w, float h) {
   }
 }
 
-void ui_card_name(const card *c, float x, float y, int focused) {
+static void name_label(const card *c, float x, float y, float w, float h) {
   if (!c->name) return;
-  if (focused) y -= 6;
-  gfx_gradient(x, y + CARD_H - 90, CARD_W, 90, CARD_RADIUS, SC_RGBA(0, 0, 0, 0), SC_RGBA(0, 0, 0, 235), 1);
-  text_draw_fit(c->name, x + 15, y + CARD_H - 13 - text_line_height(24), CARD_W - 30, 24, W_SEMIBOLD, C_WHITE);
+  gfx_gradient(x, y + h - 90, w, 90, CARD_RADIUS, SC_RGBA(0, 0, 0, 0), SC_RGBA(0, 0, 0, 235), 1);
+  text_draw_fit(c->name, x + 15, y + h - 13 - text_line_height(24), w - 30, 24, W_SEMIBOLD, C_WHITE);
 }
 
-void ui_card(const card *c, float x, float y, int wide, int focused) {
-  float w = wide ? WIDE_W : CARD_W, h = wide ? WIDE_H : CARD_H;
+void ui_card_name(const card *c, float x, float y, int focused) { name_label(c, x, focused ? y - 6 : y, CARD_W, CARD_H); }
+
+static void draw_card(const card *c, float x, float y, float w, float h, int wide, int focused) {
   if (focused) y -= 6;
   float fade;
   const sc_tex *pic = img_get(c->art, (int)w, &fade);
@@ -230,4 +230,18 @@ void ui_card(const card *c, float x, float y, int wide, int focused) {
     ui_icon(ICON_CHECK, x + w - 54 + 8, y + 20, 26, C_WHITE);
   }
   if (focused) ui_focus_ring(x, y, w, h, CARD_RADIUS);
+}
+
+void ui_card(const card *c, float x, float y, int wide, int focused) {
+  draw_card(c, x, y, wide ? WIDE_W : CARD_W, wide ? WIDE_H : CARD_H, wide, focused);
+}
+
+void ui_tile(const card *c, float x, float y, float w, float h, int focused) {
+  draw_card(c, x, y, w, h, 0, focused);
+  name_label(c, x, focused ? y - 6 : y, w, h);
+}
+
+float menu_height(const menu *m) {
+  int shown = m->n < MENU_SHOWN ? m->n : MENU_SHOWN;
+  return 24 + (m->title[0] ? 50 : 0) + shown * MENU_ROW;
 }
