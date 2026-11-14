@@ -3,6 +3,7 @@
 #define SC_SCREENS_H
 
 #include "app.h"
+#include "ui.h"
 
 typedef struct {
   /* called each time the screen is shown */
@@ -12,10 +13,13 @@ typedef struct {
   void (*frame)(double t, float dt);
   /* letters from a real keyboard, for the screens that take text (NULL elsewhere) */
   void (*text)(const char *utf8);
+  /* drawn over the screen below it (a panel or a menu), which shows underneath */
+  int overlay;
 } screen;
 
 extern const screen home_screen, title_screen, sources_screen, player_screen, login_screen, profiles_screen, search_screen,
-    library_screen, discover_screen, settings_screen, addons_screen;
+    library_screen, discover_screen, settings_screen, addons_screen,
+    card_menu_screen, similar_screen;
 
 /* the first screen, with nothing to go back to */
 void app_show(const screen *s);
@@ -29,6 +33,8 @@ void home_reload(void);
 void profiles_open(int starting);
 
 /* screens opened on something */
+void card_menu_open(const card *c, int continue_watching);
+void similar_open(const char *type, const char *id);
 void title_open(const char *type, const char *id);
 void sources_open(const char *type, const char *id, const char *video, const char *name);
 /* the sources of the next episode: the one like the source just played starts by itself */

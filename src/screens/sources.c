@@ -310,7 +310,6 @@ static void draw_list(float dt) {
 }
 
 static void frame(double t, float dt) {
-  title_screen.frame(t, dt);
   ask();
   gfx_rect(PANEL_X, PANEL_Y, 800, SC_DESIGN_H - PANEL_Y, 0, SC_RGBA(17, 17, 19, 250));
   float y = PANEL_Y + 30;
@@ -348,4 +347,4 @@ static void frame(double t, float dt) {
 
 static void enter(void) {}
 
-const screen sources_screen = {enter, key, frame, NULL};
+const screen sources_screen = {enter, key, frame, NULL, 1};

@@ -88,4 +88,4 @@ static void enter(void) {
   api_get("/app/addons", listed, NULL);
 }
 
-const screen addons_screen = {enter, key, frame, NULL};
+const screen addons_screen = {enter, key, frame, NULL, 0};

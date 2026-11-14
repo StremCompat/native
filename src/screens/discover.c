@@ -127,6 +127,7 @@ static void key(app_key k) {
   else if (k == K_UP && at >= COLS) at -= COLS;
   else if (k == K_UP) in_grid = 0;
   else if (k == K_OK && at < nitems) title_open(items[at].type, items[at].id);
+  else if (k == K_MENU && at < nitems) card_menu_open(&items[at], 0);
   /* two rows from the end, the next page */
   if (nitems - at <= COLS * 2) ask();
 }
@@ -167,4 +168,4 @@ static void frame(double t, float dt) {
   nav_draw(NAV_DISCOVER, dt);
 }
 
-const screen discover_screen = {enter, key, frame, NULL};
+const screen discover_screen = {enter, key, frame, NULL, 0};

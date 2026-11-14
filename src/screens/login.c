@@ -237,4 +237,4 @@ static void frame(double t, float dt) {
   }
 }
 
-const screen login_screen = {enter, key, frame, text};
+const screen login_screen = {enter, key, frame, text, 0};

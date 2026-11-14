@@ -36,7 +36,8 @@ typedef enum {
   K_RED,
   K_GREEN,
   K_YELLOW,
-  K_BLUE
+  K_BLUE,
+  K_MENU /* OK held down: the menu of what has the focus */
 } app_key;
 
 #endif

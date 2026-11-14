@@ -277,4 +277,4 @@ static void enter(void) {
   api_get("/app/settings", model_came, NULL);
 }
 
-const screen settings_screen = {enter, key, frame, NULL};
+const screen settings_screen = {enter, key, frame, NULL, 0};

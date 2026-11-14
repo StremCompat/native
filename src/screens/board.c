@@ -410,6 +410,7 @@ static void key(app_key k) {
   else if (k == K_UP && !move_row(-1)) B->top = 1;
   else if (k == K_OK && focused_card() && focused_card()->id && focused_card()->type)
     title_open(focused_card()->type, focused_card()->id);
+  else if (k == K_MENU && focused_card() && focused_card()->id) card_menu_open(focused_card(), focused_card()->cw);
   else if (k == K_BACK) {
     B->top = 1;
     first_row();
@@ -461,5 +462,5 @@ static void library_frame(double t, float dt) {
   }
 }
 
-const screen home_screen = {home_enter, home_key, home_frame, NULL};
-const screen library_screen = {library_enter, library_key, library_frame, NULL};
+const screen home_screen = {home_enter, home_key, home_frame, NULL, 0};
+const screen library_screen = {library_enter, library_key, library_frame, NULL, 0};

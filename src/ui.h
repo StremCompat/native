@@ -76,9 +76,9 @@ void ui_draw_toast(double t);
 
 /* a title as a row shows it (the server decides its pictures and its lines) */
 typedef struct {
-  char *id, *type, *name, *art, *backdrop, *subtitle, *video_id, *info, *description;
+  char *id, *type, *name, *art, *backdrop, *poster, *subtitle, *video_id, *info, *description;
   float progress;
-  int watched, up_next;
+  int watched, up_next, in_library, fresh, cw;
 } card;
 
 void card_read(card *c, const jval *v);

@@ -132,4 +132,4 @@ static void frame(double t, float dt) {
 
 static void enter(void) {}
 
-const screen profiles_screen = {enter, key, frame, NULL};
+const screen profiles_screen = {enter, key, frame, NULL, 0};

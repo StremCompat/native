@@ -139,6 +139,7 @@ static void key(app_key k) {
     else if (k == K_RIGHT && row && row->col < row->n - 1) row->col++;
     else if (k == K_DOWN && row_at < nrows - 1) row_at++;
     else if (k == K_UP && row_at > 0) row_at--;
+    else if (k == K_MENU && row && row->n) card_menu_open(&row->items[row->col], 0);
     else if (k == K_OK && row && row->n) {
       run(0); /* remembered once a result is opened */
       title_open(row->items[row->col].type, row->items[row->col].id);
@@ -248,4 +249,4 @@ static void enter(void) {
   if (!asked[0] && !nrecent) run(1); /* the recent searches */
 }
 
-const screen search_screen = {enter, key, frame, text};
+const screen search_screen = {enter, key, frame, text, 0};

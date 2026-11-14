@@ -170,6 +170,7 @@ void card_read(card *c, const jval *v) {
   c->name = dup_or_null(json_str(json_get(v, "name"), NULL));
   c->art = dup_or_null(json_str(json_get(v, "art"), NULL));
   c->backdrop = dup_or_null(json_str(json_get(v, "backdrop"), NULL));
+  c->poster = dup_or_null(json_str(json_get(v, "poster"), NULL));
   c->subtitle = dup_or_null(json_str(json_get(v, "subtitle"), NULL));
   c->video_id = dup_or_null(json_str(json_get(v, "videoId"), NULL));
   c->info = dup_or_null(json_str(json_get(v, "info"), NULL));
@@ -177,6 +178,9 @@ void card_read(card *c, const jval *v) {
   c->progress = (float)json_num(json_get(v, "progress"), 0);
   c->watched = json_bool(json_get(v, "watched"), 0);
   c->up_next = json_bool(json_get(v, "upNext"), 0);
+  c->in_library = json_bool(json_get(v, "inLibrary"), 0);
+  c->fresh = json_bool(json_get(v, "fresh"), 0);
+  c->cw = json_bool(json_get(v, "cw"), 0);
 }
 
 void card_clear(card *c) {
@@ -185,6 +189,7 @@ void card_clear(card *c) {
   free(c->name);
   free(c->art);
   free(c->backdrop);
+  free(c->poster);
   free(c->subtitle);
   free(c->video_id);
   free(c->info);

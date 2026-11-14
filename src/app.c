@@ -44,8 +44,6 @@ static app_key key_of(const SDL_Event *ev) {
   case SDLK_DOWN: return K_DOWN;
   case SDLK_LEFT: return K_LEFT;
   case SDLK_RIGHT: return K_RIGHT;
-  case SDLK_RETURN:
-  case SDLK_KP_ENTER: return K_OK;
   case SDLK_AUDIOPLAY:
   case SDLK_AUDIOSTOP: return K_PLAY;
   default: return K_NONE;
@@ -81,9 +79,30 @@ static void on_key(app_key k) {
   if (k != K_NONE && depth) stack[depth - 1]->key(k);
 }
 
+/* OK is told on release, or as K_MENU once it has been held down (web: hold OK) */
+#define HOLD_MS 600.0
+static double ok_down_at = -1;
+static int ok_held;
+
+static int is_ok(const SDL_Event *ev) {
+  SDL_Keycode k = ev->key.keysym.sym;
+  return k == SDLK_RETURN || k == SDLK_KP_ENTER;
+}
+
 void app_event(const SDL_Event *ev) {
-  if (ev->type == SDL_TEXTINPUT && depth && stack[depth - 1]->text) stack[depth - 1]->text(ev->text.text);
-  else on_key(key_of(ev));
+  if (ev->type == SDL_TEXTINPUT && depth && stack[depth - 1]->text) {
+    stack[depth - 1]->text(ev->text.text);
+  } else if ((ev->type == SDL_KEYDOWN || ev->type == SDL_KEYUP) && is_ok(ev)) {
+    if (ev->type == SDL_KEYDOWN && !ev->key.repeat) ok_down_at = last_frame, ok_held = 0;
+    else if (ev->type == SDL_KEYUP && ok_down_at >= 0) {
+      if (!ok_held) on_key(K_OK);
+      ok_down_at = -1;
+    }
+  } else if (ev->type == SDL_KEYDOWN && ev->key.keysym.sym == SDLK_MENU) {
+    on_key(K_MENU);
+  } else {
+    on_key(key_of(ev));
+  }
 }
 
 int app_wants_quit(void) { return quit; }
@@ -110,7 +129,12 @@ int app_start(void) {
 void app_frame(int w, int h, double t) {
   float dt = last_frame > 0 && t > last_frame ? (float)(t - last_frame) : 0;
   last_frame = t;
+  if (ok_down_at >= 0 && !ok_held && t - ok_down_at >= HOLD_MS) {
+    ok_held = 1;
+    on_key(K_MENU);
+  }
   gfx_begin(w, h, C_BG);
+  if (depth > 1 && stack[depth - 1]->overlay) stack[depth - 2]->frame(t, dt);
   if (depth) stack[depth - 1]->frame(t, dt);
   ui_draw_toast(t);
   gfx_end();
@@ -140,7 +164,7 @@ int app_run_script(const char *script_path, const char *shot_path) {
         static const struct {
           const char *name;
           app_key key;
-        } keys[] = {{"up", K_UP}, {"down", K_DOWN}, {"left", K_LEFT}, {"right", K_RIGHT}, {"ok", K_OK}, {"back", K_BACK}};
+        } keys[] = {{"up", K_UP}, {"down", K_DOWN}, {"left", K_LEFT}, {"right", K_RIGHT}, {"ok", K_OK}, {"back", K_BACK}, {"menu", K_MENU}};
         for (size_t i = 0; i < sizeof keys / sizeof keys[0]; i++)
           if (!strcmp(arg, keys[i].name)) on_key(keys[i].key);
         t += 16;

@@ -9,6 +9,7 @@
 #include "api.h"
 #include "img.h"
 #include "nav.h"
+#include "net.h"
 #include "screens.h"
 #include "text.h"
 #include "ui.h"
@@ -213,9 +214,94 @@ void title_open(const char *type, const char *id) {
 }
 
 /* ---------- keys ---------- */
+/* the library button: in or out, and its own label and icon follow */
+static void library_toggled(net_reply *r, void *user) {
+  (void)user;
+  jdoc *d = r->status == 200 && r->body ? json_parse(r->body, r->len) : NULL;
+  const jval *a = json_root(d);
+  const char *message = json_str(json_get(a, "message"), "");
+  if (*message) ui_toast(message);
+  int in = json_bool(json_get(a, "inLibrary"), 0);
+  for (int i = 0; d && i < nactions; i++)
+    if (actions[i].kind && !strcmp(actions[i].kind, "library")) {
+      free(actions[i].label);
+      free(actions[i].icon);
+      actions[i].label = str_dup(tx(in ? "inLibrary" : "libraryButton"));
+      actions[i].icon = str_dup(in ? "check" : "plus");
+    }
+  json_free(d);
+  home_reload();
+}
+
+static void toggle_library(void) {
+  sbuf b = {0};
+  sb_add(&b, "{\"action\":\"library\",\"item\":{\"id\":");
+  sb_add_json_str(&b, want_id);
+  sb_add(&b, ",\"type\":");
+  sb_add_json_str(&b, want_type);
+  sb_add(&b, ",\"name\":");
+  sb_add_json_str(&b, name ? name : "");
+  sb_add(&b, ",\"background\":");
+  sb_add_json_str(&b, background ? background : "");
+  sb_add(&b, "}}");
+  net_request("/app/act", b.s, NET_HIGH, NULL, library_toggled, NULL);
+  sb_free(&b);
+}
+
+/* ---------- watched marks: one episode, or a whole season from its selector ---------- */
+static menu marks;
+static int marks_season; /* the menu marks the season shown rather than the focused episode */
+
+static void marked(net_reply *r, void *user) {
+  (void)user;
+  jdoc *d = r->status == 200 && r->body ? json_parse(r->body, r->len) : NULL;
+  const char *message = json_str(json_get(json_root(d), "message"), "");
+  if (*message) ui_toast(message);
+  json_free(d);
+  home_reload();
+}
+
+static void mark(int watched) {
+  sbuf b = {0};
+  sb_addf(&b, "{\"action\":\"%s\",\"watched\":%s,\"item\":{\"id\":", marks_season ? "season" : "watched",
+          watched ? "true" : "false");
+  sb_add_json_str(&b, want_id);
+  sb_add(&b, ",\"type\":\"series\",\"name\":");
+  sb_add_json_str(&b, name ? name : "");
+  if (!marks_season) {
+    sb_add(&b, ",\"videoId\":");
+    sb_add_json_str(&b, shown(ep_at)->id);
+    shown(ep_at)->watched = watched;
+    sb_add(&b, "}");
+  } else {
+    sb_add(&b, "},\"vids\":[");
+    for (int i = 0; i < shown_count(); i++) {
+      if (i) sb_add(&b, ",");
+      sb_add_json_str(&b, shown(i)->id);
+      shown(i)->watched = watched;
+    }
+    sb_add(&b, "]");
+  }
+  sb_add(&b, "}");
+  net_request("/app/act", b.s, NET_HIGH, NULL, marked, NULL);
+  sb_free(&b);
+}
+
+static void open_marks(int season) {
+  int all = 1;
+  for (int i = 0; i < shown_count(); i++) all = all && shown(i)->watched;
+  int done = season ? all : shown(ep_at)->watched;
+  marks_season = season;
+  menu_begin(&marks, name ? name : "");
+  if (season) menu_add(&marks, tx(done ? "markSeasonUnwatched" : "markSeasonWatched"), 0, !done);
+  else menu_add(&marks, tx(done ? "markUnwatched" : "markWatched"), 0, !done);
+}
+
 static void run_action(const action *a) {
   const char *kind = a->kind ? a->kind : "";
   if (!strcmp(kind, "resume")) player_start(want_type, want_id, a->video ? a->video : want_id, -1);
+  else if (!strcmp(kind, "similar")) similar_open(want_type, want_id);
+  else if (!strcmp(kind, "library")) toggle_library();
   else if (!strcmp(kind, "episode") || !strcmp(kind, "sources") || !strcmp(kind, "best"))
     sources_open(want_type, want_id, a->video ? a->video : want_id, name);
 }
@@ -249,11 +335,21 @@ static void key(app_key k) {
     nav_key(k);
     return;
   }
-  if (k == K_BACK) {
+  if (k == K_BACK && !marks.open) {
     app_back();
     return;
   }
   if (!loaded) return;
+  if (marks.open) {
+    int chosen = menu_key(&marks, k);
+    if (chosen >= 0) {
+      marks.open = 0;
+      mark(chosen);
+    }
+    return;
+  }
+  if (k == K_MENU && zone == ZONE_EPISODES && shown_count()) return open_marks(0);
+  if (k == K_MENU && zone == ZONE_SEASONS && control == CTRL_LIST && shown_count()) return open_marks(1);
   int *at = zone == ZONE_BUTTONS ? &button : zone == ZONE_SEASONS ? &control : &ep_at;
   int count = zone == ZONE_BUTTONS ? nactions : zone == ZONE_SEASONS ? CTRL_COUNT : shown_count();
   if (k == K_RIGHT && *at < count - 1) (*at)++;
@@ -441,8 +537,12 @@ static void frame(double t, float dt) {
     }
   }
   nav_draw(NAV_HOME, dt);
+  if (marks.open) {
+    gfx_rect(0, 0, SC_DESIGN_W, SC_DESIGN_H, 0, SC_RGBA(0, 0, 0, 150));
+    menu_draw(&marks, SC_DESIGN_W / 2 - 300, SC_DESIGN_H / 2 + menu_height(&marks) / 2);
+  }
 }
 
 static void enter(void) {}
 
-const screen title_screen = {enter, key, frame, NULL};
+const screen title_screen = {enter, key, frame, NULL, 0};
