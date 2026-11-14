@@ -3,7 +3,9 @@
 
 #include <SDL_webOS.h>
 #include <dirent.h>
+#include <fcntl.h>
 #include <signal.h>
+#include <stdlib.h>
 #include <unistd.h>
 #include <stdio.h>
 #include <string.h>
@@ -95,30 +97,73 @@ void platform_language(char *out, int size) {
 
 /* the service starts the local server (service/launch.js); the call is what wakes it. A refusal
    is told on screen, with what the service saw, as the web launcher did. */
+static char service_note[200], direct_note[200];
+
+const char *platform_server_status(void) {
+  static char both[420];
+  snprintf(both, sizeof both, "%s%s%s", service_note, direct_note[0] ? " \xC2\xB7 " : "", direct_note);
+  return both;
+}
+
 static bool start_answered(LSHandle *sh, LSMessage *msg, void *ctx) {
   (void)sh;
   (void)ctx;
   const char *text = LSMessageGetPayload(msg);
   jdoc *d = text ? json_parse(text, strlen(text)) : NULL;
   const jval *root = json_root(d);
-  if (!json_bool(json_get(root, "returnValue"), 1)) {
-    char message[300];
-    snprintf(message, sizeof message, "StremCompat service: %s %s", json_str(json_get(root, "errorText"), ""),
-             json_str(json_get(root, "log"), json_str(json_get(root, "reason"), "")));
-    fprintf(stderr, "%s\n", message);
-    platform_fatal(message);
-  }
+  if (json_bool(json_get(root, "ready"), 0)) snprintf(service_note, sizeof service_note, "service ready");
+  else
+    snprintf(service_note, sizeof service_note, "service %s %s %s", json_str(json_get(root, "errorCode"), ""),
+             json_str(json_get(root, "errorText"), json_str(json_get(root, "reason"), "not ready")), json_str(json_get(root, "log"), ""));
+  fprintf(stderr, "start: %s\n", text ? text : "");
   json_free(d);
   return true;
 }
 
+/* The service did not answer: the server is started here, as the service does it (launch.js
+   startRuntime): the TV's Node running local-server.js from the service's folder, in a session of
+   its own so it outlives this process. What it prints goes to /tmp/stremcompat-server.log. */
+void platform_run_server(void) {
+  static const char *nodes[] = {"/usr/bin/node", "/usr/bin/nodejs", "/usr/local/bin/node"};
+  const char *node = NULL;
+  for (size_t i = 0; i < sizeof nodes / sizeof nodes[0] && !node; i++)
+    if (access(nodes[i], X_OK) == 0) node = nodes[i];
+  char dir[600], script[700];
+  char *base = SDL_GetBasePath(); /* .../usr/palm/applications/<app id>/ */
+  snprintf(dir, sizeof dir, "%s../../services/io.github.alexesmm.legacytv.server", base ? base : "");
+  SDL_free(base);
+  snprintf(script, sizeof script, "%s/local-server.js", dir);
+  if (!node) {
+    snprintf(direct_note, sizeof direct_note, "direct: no node");
+    return;
+  }
+  if (access(script, R_OK) != 0) {
+    snprintf(direct_note, sizeof direct_note, "direct: no server at %.150s", dir);
+    return;
+  }
+  pid_t pid = fork();
+  if (pid == 0) {
+    setsid();
+    int log = open("/tmp/stremcompat-server.log", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (log >= 0) {
+      dup2(log, 1);
+      dup2(log, 2);
+    }
+    if (chdir(dir) == 0) {
+      if (!getenv("HOME")) setenv("HOME", "/home/root", 1);
+      execl(node, node, "--max_semi_space_size=2", "local-server.js", (char *)NULL);
+    }
+    _exit(127);
+  }
+  snprintf(direct_note, sizeof direct_note, pid > 0 ? "direct: started %s" : "direct: fork failed", node);
+  fprintf(stderr, "%s\n", direct_note);
+}
+
 void platform_start_server(void) {
   LSMessageToken token;
-  if (!luna_call("luna://io.github.alexesmm.legacytv.server/start", "{}", start_answered, &token)) {
-    char message[300];
-    snprintf(message, sizeof message, "StremCompat service: %s", luna_error());
-    platform_fatal(message);
-  }
+  snprintf(service_note, sizeof service_note, "service asked, no answer");
+  if (!luna_call("luna://io.github.alexesmm.legacytv.server/start", "{}", start_answered, &token))
+    snprintf(service_note, sizeof service_note, "service call refused: %s", luna_error());
   luna_poll();
 }
 

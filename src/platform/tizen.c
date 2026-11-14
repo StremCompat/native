@@ -53,6 +53,9 @@ app_key platform_key(const SDL_Event *ev) {
 
 void platform_poll(void) {}
 
+const char *platform_server_status(void) { return ""; }
+void platform_run_server(void) {}
+
 void platform_fatal(const char *message) { fprintf(stderr, "%s\n", message); }
 
 void platform_language(char *out, int size) {

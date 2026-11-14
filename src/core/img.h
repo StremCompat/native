@@ -21,7 +21,7 @@ const sc_tex *img_get(const char *url, int width, float *fade);
 int img_failed(const char *url, int width);
 
 /* a picture from the app's own files as an alpha-only texture (icons), white where opaque */
-sc_tex img_load_alpha(const char *path);
+sc_tex img_load_file(const char *path, int alpha_only);
 
 /* screenshots: pictures show at once instead of fading in, so every run looks the same */
 void img_skip_fades(int on);

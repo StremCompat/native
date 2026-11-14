@@ -23,6 +23,11 @@ void platform_language(char *out, int size);
 
 /* starts the app's own local server where the system runs it as a service (webOS) */
 void platform_start_server(void);
+/* starts the local server from the app itself, when the system's service did not answer
+   (webOS: a native app cannot always reach its own service) */
+void platform_run_server(void);
+/* what the service said to that so far, for the start screen's report ("" where there is none) */
+const char *platform_server_status(void);
 
 /* hands the downloaded update to the system installer; done(error) with "" when it was taken */
 void platform_install_update(void (*done)(const char *error));

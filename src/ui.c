@@ -15,7 +15,7 @@ static sc_tex icons;
 int ui_init(void) {
   char path[600];
   snprintf(path, sizeof path, "%s", app_asset_dir("icons.png"));
-  icons = img_load_alpha(path);
+  icons = img_load_file(path, 1);
   return icons.id ? 0 : -1;
 }
 

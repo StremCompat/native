@@ -162,8 +162,8 @@ int img_failed(const char *url, int width) {
   return e && e->st == FAILED && !e->unreachable;
 }
 
-sc_tex img_load_alpha(const char *path) {
-  sc_tex t = {0, 0, 0, 1};
+sc_tex img_load_file(const char *path, int alpha_only) {
+  sc_tex t = {0, 0, 0, alpha_only};
   size_t n = 0;
   unsigned char *data = (unsigned char *)read_file(path, &n);
   int w, h, ch;
@@ -171,8 +171,9 @@ sc_tex img_load_alpha(const char *path) {
   free(data);
   if (!px) return t;
   /* the alpha channel alone, packed in place */
-  for (int i = 0; i < w * h; i++) px[i] = px[i * 4 + 3];
-  t = gfx_texture(w, h, px, 1);
+  if (alpha_only)
+    for (int i = 0; i < w * h; i++) px[i] = px[i * 4 + 3];
+  t = gfx_texture(w, h, px, alpha_only);
   free(px);
   return t;
 }
