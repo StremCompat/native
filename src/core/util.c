@@ -6,14 +6,16 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* through SDL, which also reads the files packed inside an Android app */
+/* through SDL, which also reads the files packed inside an Android app. The calls go through the
+   file's own functions: SDL_RWsize and the like only exist from SDL 2.0.10, newer than the SDL
+   of webOS 4, where a missing function stops the app before it starts. */
 char *read_file(const char *path, size_t *size) {
   SDL_RWops *f = SDL_RWFromFile(path, "rb");
   if (!f) return NULL;
-  Sint64 n = SDL_RWsize(f);
+  Sint64 n = f->size(f);
   char *data = n >= 0 ? malloc((size_t)n + 1) : NULL;
-  size_t got = data ? SDL_RWread(f, data, 1, (size_t)n) : 0;
-  SDL_RWclose(f);
+  size_t got = data ? f->read(f, data, 1, (size_t)n) : 0;
+  f->close(f);
   if (!data) return NULL;
   data[got] = 0;
   if (size) *size = got;
