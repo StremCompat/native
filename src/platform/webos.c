@@ -46,7 +46,6 @@ void platform_init(void) {
   if (freopen("/tmp/stremcompat-native.log", "w", stderr)) setvbuf(stderr, NULL, _IOLBF, 0);
   /* Back comes to the app instead of closing it; the app decides when Back means leave */
   SDL_SetHint(SDL_HINT_WEBOS_ACCESS_POLICY_KEYS_BACK, "true");
-  SDL_SetHint(SDL_HINT_WEBOS_REGISTER_APP, "true");
   SDL_SetHint(SDL_HINT_WEBOS_CURSOR_SLEEP_TIME, "5000");
 }
 
