@@ -8,6 +8,7 @@
 
 #include "api.h"
 #include "img.h"
+#include "keyboard.h"
 #include "nav.h"
 #include "net.h"
 #include "screens.h"
@@ -318,6 +319,24 @@ static void move_list(int dir) {
   }
 }
 
+/* Go to episode: a number typed with the keyboard, an overall one in the continuous order */
+static keyboard jump;
+static int jumping;
+
+static void jump_to(int number) {
+  for (int s = 0; s < nseasons; s++)
+    for (int e = 0; e < seasons[s].n; e++) {
+      const episode *ep = &seasons[s].eps[e];
+      int match = continuous ? ep->absolute == number : s == season_at && e + 1 == number;
+      if (match) {
+        select_episode(ep->id);
+        zone = ZONE_EPISODES;
+        return;
+      }
+    }
+  ui_toast(tx("episodeNotFound"));
+}
+
 static void control_key(void) {
   if (control == CTRL_ORDER) {
     const char *keep = shown_count() ? shown(ep_at)->id : NULL;
@@ -328,6 +347,10 @@ static void control_key(void) {
     move_list(-1);
   } else if (control == CTRL_NEXT) {
     move_list(1);
+  } else if (control == CTRL_JUMP) {
+    kb_reset(&jump, "", 0);
+    jump.row = 2; /* the digits */
+    jumping = 1;
   }
 }
 
@@ -336,11 +359,19 @@ static void key(app_key k) {
     nav_key(k);
     return;
   }
-  if (k == K_BACK && !marks.open) {
+  if (k == K_BACK && !marks.open && !jumping) {
     app_back();
     return;
   }
   if (!loaded) return;
+  if (jumping) {
+    if (k == K_BACK) jumping = 0;
+    else if (kb_key(&jump, k) == KB_DONE) {
+      jumping = 0;
+      if (atoi(jump.text) > 0) jump_to(atoi(jump.text));
+    }
+    return;
+  }
   if (marks.open) {
     int chosen = menu_key(&marks, k);
     if (chosen >= 0) {
@@ -538,6 +569,14 @@ static void frame(double t, float dt) {
     }
   }
   nav_draw(NAV_HOME, dt);
+  if (jumping) {
+    float kw = 13 * 72 - 8, kx = (SC_DESIGN_W - kw) / 2, ky = SC_DESIGN_H - 360;
+    gfx_rect(kx - 30, ky - 130, kw + 60, 460, 18, SC_RGBA(20, 20, 22, 250));
+    text_draw(tx("goToEpisode"), kx, ky - 110, 22, W_BOLD, C_TEXT(0.7f));
+    gfx_rect(kx, ky - 72, kw, 56, 10, C_TEXT(0.1f));
+    text_draw_fit(jump.text, kx + 18, ky - 72 + (56 - text_line_height(26)) / 2, kw - 36, 26, W_REGULAR, C_WHITE);
+    kb_draw(&jump, kx, ky);
+  }
   if (marks.open) {
     gfx_rect(0, 0, SC_DESIGN_W, SC_DESIGN_H, 0, SC_RGBA(0, 0, 0, 150));
     menu_draw(&marks, SC_DESIGN_W / 2 - 300, SC_DESIGN_H / 2 + menu_height(&marks) / 2);
