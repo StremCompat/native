@@ -10,15 +10,22 @@ typedef struct {
   void (*key)(app_key k);
   /* t: the clock in milliseconds; dt: since the last frame */
   void (*frame)(double t, float dt);
+  /* letters from a real keyboard, for the screens that take text (NULL elsewhere) */
+  void (*text)(const char *utf8);
 } screen;
 
-extern const screen home_screen, title_screen, sources_screen, player_screen;
+extern const screen home_screen, title_screen, sources_screen, player_screen, login_screen, profiles_screen;
 
 /* the first screen, with nothing to go back to */
 void app_show(const screen *s);
 /* a screen over the current one, and back to the one before */
 void app_push(const screen *s);
 void app_back(void);
+
+/* Home builds itself again the next time it is shown (after signing in or a new profile) */
+void home_reload(void);
+/* who is watching; at the start a single profile is used without asking */
+void profiles_open(int starting);
 
 /* screens opened on something */
 void title_open(const char *type, const char *id);

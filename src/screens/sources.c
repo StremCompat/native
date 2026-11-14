@@ -348,4 +348,4 @@ static void frame(double t, float dt) {
 
 static void enter(void) {}
 
-const screen sources_screen = {enter, key, frame};
+const screen sources_screen = {enter, key, frame, NULL};

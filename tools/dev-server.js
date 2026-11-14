@@ -4,7 +4,7 @@
 // public-repo folder) with a made-up addon and account, so the native interface has something
 // to show without anyone's account. Pictures are drawn here as plain gradients.
 //
-// Usage: node tools/dev-server.js <public-repo folder>     (Ctrl+C stops both servers)
+// Usage: node tools/dev-server.js <public-repo folder> [--signed-out]     (Ctrl+C stops both servers)
 
 var childProcess = require('child_process');
 var fs = require('fs');
@@ -202,8 +202,10 @@ addon.listen(ADDON_PORT, '127.0.0.1', function () {
     stdio: 'inherit',
     env: Object.assign({}, process.env, { HOME: home, SC_CINEMETA_URL: base, SC_SERVER_LOG: path.join(home, 'server.log') })
   });
+  /* --signed-out: no account, for the sign-in screen */
+  var signedOut = process.argv.indexOf('--signed-out') >= 0;
   function handOver(tries) {
-    post('/app/migrate', account(), function (err) {
+    post('/app/migrate', signedOut ? {} : account(), function (err) {
       if (err && tries > 0) return setTimeout(handOver, 200, tries - 1);
       console.log(err ? 'the local server did not start' : 'ready on :' + appPort);
     });

@@ -119,6 +119,14 @@ static void home_answered(const jval *answer, void *user) {
   loaded = 1;
 }
 
+void home_reload(void) {
+  loaded = 0;
+  asked_at = -RETRY_MS;
+  rows_clear();
+  top = 1;
+  cur = 0;
+}
+
 static void load(void) {
   gen++;
   loaded = 0;
@@ -397,4 +405,4 @@ static void frame(double t, float dt) {
   nav_draw(NAV_HOME, dt);
 }
 
-const screen home_screen = {enter, key, frame};
+const screen home_screen = {enter, key, frame, NULL};

@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "api.h"
+#include "json.h"
 #include "gfx.h"
 #include "img.h"
 #include "net.h"
@@ -80,7 +81,10 @@ static void on_key(app_key k) {
   if (k != K_NONE && depth) stack[depth - 1]->key(k);
 }
 
-void app_event(const SDL_Event *ev) { on_key(key_of(ev)); }
+void app_event(const SDL_Event *ev) {
+  if (ev->type == SDL_TEXTINPUT && depth && stack[depth - 1]->text) stack[depth - 1]->text(ev->text.text);
+  else on_key(key_of(ev));
+}
 
 int app_wants_quit(void) { return quit; }
 
@@ -89,7 +93,16 @@ int app_wants_quit(void) { return quit; }
 int app_start(void) {
   if (ui_init()) return -1;
   for (int i = 0; i < 120 && api_load_strings(); i++) SDL_Delay(250);
-  app_show(&home_screen);
+  /* signed in: Home, or for a Nuvio account who is watching first; otherwise signing in */
+  net_reply r;
+  net_fetch("/app/state", NULL, &r);
+  jdoc *d = r.status == 200 && r.body ? json_parse(r.body, r.len) : NULL;
+  const jval *st = json_root(d);
+  if (!json_bool(json_get(st, "signedIn"), 0)) app_show(&login_screen);
+  else if (!strcmp(json_str(json_get(st, "provider"), ""), "nuvio")) profiles_open(1);
+  else app_show(&home_screen);
+  json_free(d);
+  free(r.body);
   return 0;
 }
 

@@ -711,4 +711,4 @@ static void frame(double t, float dt) {
 
 static void enter(void) {}
 
-const screen player_screen = {enter, key, frame};
+const screen player_screen = {enter, key, frame, NULL};
