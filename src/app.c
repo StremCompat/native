@@ -111,6 +111,7 @@ void app_frame(int w, int h, double t) {
   last_frame = t;
   gfx_begin(w, h, C_BG);
   if (depth) stack[depth - 1]->frame(t, dt);
+  ui_draw_toast(t);
   gfx_end();
 }
 

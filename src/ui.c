@@ -142,6 +142,24 @@ void menu_draw(const menu *m, float x, float bottom) {
   }
 }
 
+/* ---------- toast ---------- */
+#define TOAST_MS 3500.0
+static char toast_text[256];
+static double toast_at, toast_clock;
+
+void ui_toast(const char *text) {
+  snprintf(toast_text, sizeof toast_text, "%s", text ? text : "");
+  toast_at = toast_clock;
+}
+
+void ui_draw_toast(double t) {
+  toast_clock = t;
+  if (!toast_text[0] || t - toast_at > TOAST_MS) return;
+  float w = text_width(toast_text, 24, W_SEMIBOLD) + 52, y = SC_DESIGN_H * 0.08f;
+  gfx_rect((SC_DESIGN_W - w) / 2, y, w, 54, 27, SC_RGBA(20, 20, 22, 219));
+  ui_line(toast_text, (SC_DESIGN_W - w) / 2 + 26, y, 54, 24, W_SEMIBOLD, C_WHITE);
+}
+
 /* ---------- cards ---------- */
 static char *dup_or_null(const char *s) { return s && *s ? str_dup(s) : NULL; }
 

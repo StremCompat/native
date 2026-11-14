@@ -70,6 +70,10 @@ float menu_height(const menu *m);
    the right edge, keeping one card after it in sight (web: slideRow) */
 float ui_row_offset(int focused, float step, float width);
 
+/* a short message at the top of the screen for a few seconds (any screen) */
+void ui_toast(const char *text);
+void ui_draw_toast(double t);
+
 /* a title as a row shows it (the server decides its pictures and its lines) */
 typedef struct {
   char *id, *type, *name, *art, *backdrop, *subtitle, *video_id, *info, *description;

@@ -20,7 +20,6 @@
 #define BAR_SHOW_MS 5000.0
 #define SEEK_COMMIT_MS 1200.0
 #define REPORT_EVERY_MS 10000.0
-#define TOAST_MS 3000.0
 #define BTN 86.0f
 #define BTN_BIG 102.0f
 
@@ -51,8 +50,7 @@ static struct {
 static int nskips, binge;
 static double countdown_at; /* when the countdown to the next episode began, 0 when none */
 static char *want_type, *want_id, *want_vid; /* what was asked, to fall back on the sources */
-static double clock_now, bar_until, seek_target = -1, seek_base = -1, seek_at, last_report, toast_until;
-static char toast[256];
+static double clock_now, bar_until, seek_target = -1, seek_base = -1, seek_at, last_report;
 
 static char *copy(const jval *v) {
   const char *s = json_str(v, NULL);
@@ -68,10 +66,6 @@ static void clear_info(void) {
   }
 }
 
-static void show_toast(const char *text) {
-  snprintf(toast, sizeof toast, "%s", text);
-  toast_until = clock_now + TOAST_MS;
-}
 
 static int shown(int b) {
   if (b == B_EPISODES) return info.type && !strcmp(info.type, "series");
@@ -148,7 +142,7 @@ static void started(const jval *answer, void *user) {
       app_back();
       sources_open(want_type, want_id, want_vid, NULL);
     } else {
-      show_toast(txp("sourceFailed", NULL));
+      ui_toast(txp("sourceFailed", NULL));
     }
     return;
   }
@@ -190,7 +184,7 @@ static void started(const jval *answer, void *user) {
     format_time(at, sizeof at, resume);
     char text[200];
     snprintf(text, sizeof text, "%s%s", txp("resuming", NULL), at);
-    show_toast(text);
+    ui_toast(text);
   }
   ready = 1;
 }
@@ -211,7 +205,6 @@ void player_start(const char *type, const char *id, const char *vid, int seq) {
   button = B_PLAY;
   seek_target = seek_base = -1;
   bar_until = 0;
-  toast[0] = 0;
   nskips = 0;
   countdown_at = 0;
   sbuf p = {0};
@@ -653,12 +646,6 @@ static void draw_countdown(double t) {
   text_draw(hint, (SC_DESIGN_W - text_width(hint, 26, W_SEMIBOLD)) / 2, y + 90, 26, W_SEMIBOLD, C_TEXT(0.78f));
 }
 
-static void draw_toast(void) {
-  if (clock_now >= toast_until || !toast[0]) return;
-  float w = text_width(toast, 24, W_SEMIBOLD) + 52, y = SC_DESIGN_H * 0.08f;
-  gfx_rect((SC_DESIGN_W - w) / 2, y, w, 54, 27, SC_RGBA(20, 20, 22, 219));
-  ui_line(toast, (SC_DESIGN_W - w) / 2 + 26, y, 54, 24, W_SEMIBOLD, C_WHITE);
-}
 
 static void draw_failure(void) {
   gfx_rect(0, 0, SC_DESIGN_W, SC_DESIGN_H, 0, SC_RGBA(10, 10, 11, 235));
@@ -706,7 +693,6 @@ static void frame(double t, float dt) {
     draw_skip();
     menu_draw(&list, list_left ? 52 : SC_DESIGN_W - 52 - 384, SC_DESIGN_H - 190);
   }
-  draw_toast();
 }
 
 static void enter(void) {}
