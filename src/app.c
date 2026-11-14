@@ -16,6 +16,7 @@
 
 static char asset_root[512] = "assets";
 static int quit;
+const char *app_stage = "start";
 
 const char *app_asset_dir(const char *sub) {
   static char path[600];

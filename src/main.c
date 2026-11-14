@@ -74,6 +74,15 @@ static void step(void) {
   if (app_wants_quit()) running = 0;
 }
 
+/* the start failed: said in the log and to the person, then the app closes */
+static int fail(const char *what) {
+  char message[300];
+  snprintf(message, sizeof message, "StremCompat: %s (%s)", what, SDL_GetError());
+  fprintf(stderr, "%s\n", message);
+  platform_fatal(message);
+  return 1;
+}
+
 int main(int argc, char **argv) {
   const char *shot = NULL, *script = NULL;
   int win_w = 1280, win_h = 720, port = 8082;
@@ -84,10 +93,8 @@ int main(int argc, char **argv) {
     else if (!strcmp(argv[i], "--port") && i + 1 < argc) port = atoi(argv[++i]);
   }
   platform_init();
-  if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0) {
-    fprintf(stderr, "SDL: %s\n", SDL_GetError());
-    return 1;
-  }
+  app_stage = "SDL";
+  if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER) != 0) return fail("SDL");
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
@@ -101,26 +108,23 @@ int main(int argc, char **argv) {
   SDL_DisplayMode screen;
   if ((flags & SDL_WINDOW_FULLSCREEN) && SDL_GetDesktopDisplayMode(0, &screen) == 0) win_w = screen.w, win_h = screen.h;
   win = SDL_CreateWindow("StremCompat", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, win_w, win_h, flags);
-  if (!win) {
-    fprintf(stderr, "window: %s\n", SDL_GetError());
-    return 1;
-  }
+  if (!win) return fail("window");
+  app_stage = "GL";
   SDL_GLContext ctx = SDL_GL_CreateContext(win);
-  if (!ctx) {
-    fprintf(stderr, "GL context: %s\n", SDL_GetError());
-    return 1;
-  }
+  if (!ctx) return fail("GL context");
   SDL_GL_SetSwapInterval(1);
   int missing = sc_gl_load(gl_lookup);
-  if (missing) {
-    fprintf(stderr, "GL: %d entry points missing\n", missing);
-    return 1;
-  }
-  if (app_init(argc, argv) || gfx_init() || text_init(app_asset_dir("fonts"))) return 1;
+  if (missing) return fail("GL entry points missing");
+  app_stage = "drawing";
+  if (app_init(argc, argv) || gfx_init()) return fail("drawing");
+  app_stage = "fonts";
+  if (text_init(app_asset_dir("fonts"))) return fail("fonts");
   platform_add_fonts();
   net_init(port, 3);
   img_init(IMG_BUDGET);
-  if (app_start()) return 1;
+  app_stage = "first screen";
+  if (app_start()) return fail("first screen");
+  app_stage = "running";
 
   if (shot) {
     /* offscreen at the design size: the same picture whatever the window */

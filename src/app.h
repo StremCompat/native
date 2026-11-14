@@ -8,6 +8,8 @@
 const char *app_asset_dir(const char *sub);
 
 int app_init(int argc, char **argv);
+/* the step the start is at, named in the report when something fails there */
+extern const char *app_stage;
 void app_event(const SDL_Event *ev);
 /* draws one frame on a surface of w x h at time t (milliseconds) */
 void app_frame(int w, int h, double t);

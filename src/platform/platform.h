@@ -27,6 +27,9 @@ void platform_start_server(void);
 /* hands the downloaded update to the system installer; done(error) with "" when it was taken */
 void platform_install_update(void (*done)(const char *error));
 
+/* why the app cannot go on, shown where the person sees it (a TV notification on webOS) */
+void platform_fatal(const char *message);
+
 /* offers the system's fonts to the text module, best candidates for CJK first */
 void platform_add_fonts(void);
 

@@ -3,6 +3,8 @@
 
 #include <SDL_webOS.h>
 #include <dirent.h>
+#include <signal.h>
+#include <unistd.h>
 #include <stdio.h>
 #include <string.h>
 #include <strings.h>
@@ -13,10 +15,35 @@
 
 Uint32 platform_window_flags(void) { return SDL_WINDOW_FULLSCREEN; }
 
+/* a notification from the system, which shows even when the app's window is gone */
+void platform_fatal(const char *message) {
+  char payload[400];
+  snprintf(payload, sizeof payload, "{\"sourceId\":\"io.github.alexesmm.legacytv\",\"message\":\"");
+  size_t n = strlen(payload);
+  for (const char *c = message; *c && n < sizeof payload - 4; c++)
+    if (*c != '"' && *c != '\\' && (unsigned char)*c >= 32) payload[n++] = *c;
+  snprintf(payload + n, sizeof payload - n, "\"}");
+  luna_call("luna://com.webos.notification/createToast", payload, NULL, NULL);
+  for (int i = 0; i < 20; i++) {
+    luna_poll();
+    usleep(50000);
+  }
+}
+
+/* a crash still says at which step it happened */
+static void crashed(int sig) {
+  char message[160];
+  snprintf(message, sizeof message, "StremCompat closed: signal %d during %s", sig, app_stage);
+  fprintf(stderr, "%s\n", message);
+  platform_fatal(message);
+  _exit(1);
+}
+
 void platform_init(void) {
   /* what goes wrong is kept where it can be read back (Settings > Diagnostics, or over ssh) */
-  if (!freopen("/tmp/stremcompat-native.log", "w", stderr)) return;
-  setvbuf(stderr, NULL, _IOLBF, 0);
+  int signals[] = {SIGSEGV, SIGBUS, SIGILL, SIGFPE, SIGABRT};
+  for (int i = 0; i < 5; i++) signal(signals[i], crashed);
+  if (freopen("/tmp/stremcompat-native.log", "w", stderr)) setvbuf(stderr, NULL, _IOLBF, 0);
   /* Back comes to the app instead of closing it; the app decides when Back means leave */
   SDL_SetHint(SDL_HINT_WEBOS_ACCESS_POLICY_KEYS_BACK, "true");
   SDL_SetHint(SDL_HINT_WEBOS_REGISTER_APP, "true");

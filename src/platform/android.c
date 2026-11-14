@@ -30,6 +30,8 @@ app_key platform_key(const SDL_Event *ev) {
 
 void platform_poll(void) {}
 
+void platform_fatal(const char *message) { fprintf(stderr, "%s\n", message); }
+
 void platform_language(char *out, int size) {
   SDL_Locale *list = SDL_GetPreferredLocales();
   out[0] = 0;
