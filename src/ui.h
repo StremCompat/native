@@ -80,6 +80,7 @@ void ui_draw_toast(double t);
 /* a title as a row shows it (the server decides its pictures and its lines) */
 typedef struct {
   char *id, *type, *name, *art, *backdrop, *poster, *subtitle, *video_id, *info, *description;
+  char *shape, *glyph; /* a Collections folder: poster, square or wide, and its emoji or letters */
   float progress;
   int watched, up_next, in_library, fresh, cw;
 } card;
@@ -96,6 +97,10 @@ void card_clear(card *c);
 void ui_card(const card *c, float x, float y, int wide, int focused);
 /* a poster card of any size with its name over the bottom (grids) */
 void ui_tile(const card *c, float x, float y, float w, float h, int focused);
+/* a Collections folder tile as Nuvio draws it: its shape, its cover (else its emoji or first
+   letters) and its name under the picture; the width its shape takes */
+void ui_folder_tile(const card *c, float x, float y, int focused);
+float ui_folder_width(const card *c);
 /* the name over the bottom of a poster card (.titlelabel), for rows that name their titles */
 void ui_card_name(const card *c, float x, float y, int focused);
 

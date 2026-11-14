@@ -19,7 +19,7 @@ typedef struct {
 
 extern const screen home_screen, title_screen, sources_screen, player_screen, login_screen, profiles_screen, search_screen,
     library_screen, discover_screen, settings_screen, addons_screen,
-    card_menu_screen, similar_screen, calendar_screen, channels_screen, boot_screen, rows_screen;
+    card_menu_screen, similar_screen, calendar_screen, channels_screen, boot_screen, rows_screen, folder_screen;
 
 /* the first screen, with nothing to go back to */
 void app_show(const screen *s);
@@ -51,6 +51,8 @@ void player_start(const char *type, const char *id, const char *vid, int seq);
 void player_play_address(const char *url, const char *title, int live);
 /* Channels, with what = 1 the add-a-list panel open, 2 the lists (Settings > Channels) */
 void channels_open(int what);
+/* a Collections folder by its id: tabs over a grid, or rows when it asks for them */
+void folder_open(const char *id);
 /* the title's trailer, inside the app, where a free source has one */
 void player_play_trailer(const char *type, const char *id);
 

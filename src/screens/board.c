@@ -28,7 +28,7 @@
 
 typedef struct {
   char *title, *catalog; /* catalog: the /app/catalog address, for rows still to fetch */
-  int wide, ranked, answered;
+  int wide, ranked, answered, folders; /* folders: a row of Collections folders */
   card *cards;
   int n, col;
   float scroll; /* shown horizontal offset, moving toward the focused card */
@@ -123,6 +123,7 @@ static void home_answered(const jval *answer, void *user) {
     r->title = copy(json_str(json_get(v, "title"), ""));
     r->wide = json_bool(json_get(v, "wide"), 0);
     r->ranked = json_bool(json_get(v, "ranked"), 0);
+    r->folders = json_bool(json_get(v, "collection"), 0);
     if (cat->type == J_OBJ) {
       sbuf path = {0};
       sb_add(&path, "/app/catalog?url=");
@@ -179,7 +180,11 @@ static int at_featured(void) { return B->featured_ok && B->top && featured_count
 
 static float row_height(const row *r) { return ROW_TITLE_H + (r->wide ? WIDE_H : CARD_H) + ROW_BOTTOM; }
 
-static float card_step(const row *r) { return (r->wide ? WIDE_W : CARD_W) + CARD_GAP; }
+/* a row of folders steps by its first tile's shape */
+static float card_step(const row *r) {
+  if (r->folders && r->n) return ui_folder_width(&r->cards[0]) + CARD_GAP;
+  return (r->wide ? WIDE_W : CARD_W) + CARD_GAP;
+}
 
 /* the rows scroll so the focused one sits at the top of their area */
 static float rows_offset(void) {
@@ -265,7 +270,7 @@ static void follow_hero(void) {
 
 static void ask_hero_meta(void) {
   const card *c = hero_card();
-  if (B->hero_asked || !c || !c->type || B->clock_now - B->hero_changed < HERO_WAIT_MS) return;
+  if (B->hero_asked || !c || !c->type || !strcmp(c->type, "folder") || B->clock_now - B->hero_changed < HERO_WAIT_MS) return;
   B->hero_asked = 1;
   sbuf path = {0};
   sb_add(&path, "/app/meta?type=");
@@ -363,6 +368,10 @@ static void draw_rows(int featured, float dt) {
       for (int c = first > 0 ? first - 1 : 0; c < r->n; c++) {
         float cx = ROW_LEFT + c * step - r->scroll;
         if (cx > SC_DESIGN_W) break;
+        if (r->folders) {
+          ui_folder_tile(&r->cards[c], cx, cy, is_cur && c == r->col);
+          continue;
+        }
         ui_card(&r->cards[c], cx, cy, r->wide, is_cur && c == r->col);
         if (B->labeled && !r->wide) ui_card_name(&r->cards[c], cx, cy, is_cur && c == r->col);
         if (r->ranked && c < 10) draw_rank(c + 1, cx, cy - (is_cur && c == r->col ? 6 : 0));
@@ -408,9 +417,12 @@ static void key(app_key k) {
   else if (k == K_LEFT) nav_focus(B->section);
   else if (k == K_DOWN) move_row(1);
   else if (k == K_UP && !move_row(-1)) B->top = 1;
+  else if (k == K_OK && focused_card() && focused_card()->type && !strcmp(focused_card()->type, "folder"))
+    folder_open(focused_card()->id);
   else if (k == K_OK && focused_card() && focused_card()->id && focused_card()->type)
     title_open(focused_card()->type, focused_card()->id);
-  else if (k == K_MENU && focused_card() && focused_card()->id) card_menu_open(focused_card(), focused_card()->cw);
+  else if (k == K_MENU && focused_card() && focused_card()->id && strcmp(focused_card()->type ? focused_card()->type : "", "folder"))
+    card_menu_open(focused_card(), focused_card()->cw);
   else if (k == K_BACK) {
     B->top = 1;
     first_row();

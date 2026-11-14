@@ -185,6 +185,8 @@ void card_read(card *c, const jval *v) {
   c->video_id = dup_or_null(json_str(json_get(v, "videoId"), NULL));
   c->info = dup_or_null(json_str(json_get(v, "info"), NULL));
   c->description = dup_or_null(json_str(json_get(v, "description"), NULL));
+  c->shape = dup_or_null(json_str(json_get(v, "shape"), NULL));
+  c->glyph = dup_or_null(json_str(json_get(v, "glyph"), NULL));
   c->progress = (float)json_num(json_get(v, "progress"), 0);
   c->watched = json_bool(json_get(v, "watched"), 0);
   c->up_next = json_bool(json_get(v, "upNext"), 0);
@@ -204,6 +206,8 @@ void card_clear(card *c) {
   free(c->video_id);
   free(c->info);
   free(c->description);
+  free(c->shape);
+  free(c->glyph);
   memset(c, 0, sizeof *c);
 }
 
@@ -267,6 +271,25 @@ static void draw_card(const card *c, float x, float y, float w, float h, int wid
 
 void ui_card(const card *c, float x, float y, int wide, int focused) {
   draw_card(c, x, y, wide ? WIDE_W : CARD_W, wide ? WIDE_H : CARD_H, wide, focused);
+}
+
+float ui_folder_width(const card *c) {
+  if (c->shape && !strcmp(c->shape, "wide")) return 540;
+  if (c->shape && !strcmp(c->shape, "square")) return CARD_H - 44;
+  return CARD_W;
+}
+
+void ui_folder_tile(const card *c, float x, float y, int focused) {
+  float w = ui_folder_width(c), h = CARD_H - 44;
+  gfx_rect(x, y, w, h, CARD_RADIUS, C_TEXT(0.07f));
+  const sc_tex *pic = c->art ? img_get(c->art, (int)w, NULL) : NULL;
+  if (pic) gfx_image(pic, x, y, w, h, CARD_RADIUS, 1, COVER);
+  else if (c->glyph) {
+    float gw = text_width(c->glyph, 58, W_EXTRABOLD);
+    ui_line(c->glyph, x + (w - gw) / 2, y, h, 58, W_EXTRABOLD, C_TEXT(0.85f));
+  }
+  if (focused) gfx_outline(x - 4, y - 4, w + 8, h + 8, CARD_RADIUS + 4, 4, C_WHITE);
+  if (c->name) text_draw_fit(c->name, x + 2, y + h + 10, w - 4, 21, W_SEMIBOLD, focused ? C_WHITE : C_TEXT(0.85f));
 }
 
 void ui_tile(const card *c, float x, float y, float w, float h, int focused) {
