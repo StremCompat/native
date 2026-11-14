@@ -45,6 +45,7 @@ static chip *chips, *langs;
 static int nchips, nlangs;
 static char *failed;
 static int zone = ZONE_LIST, chip_at, lang_at, item_at, moved;
+static int next_episode; /* opened by the player for the next episode: a matching source plays */
 static float scroll;
 
 static char *copy(const jval *v) {
@@ -106,6 +107,13 @@ static void answered(const jval *answer, void *user) {
   version = (int)json_num(json_get(answer, "version"), 0);
   done = json_bool(json_get(answer, "done"), 0);
   recommended = (int)json_num(json_get(answer, "recommended"), -1);
+  int match = (int)json_num(json_get(answer, "match"), 0);
+  if (next_episode && match > 0) {
+    next_episode = 0;
+    app_back();
+    player_start(type, id, vid, match);
+    return;
+  }
   failed = copy(json_get(answer, "failed"));
   read_chips(json_get(answer, "chips"), &chips, &nchips);
   read_chips(json_get(answer, "langs"), &langs, &nlangs);
@@ -150,6 +158,10 @@ static void ask(void) {
   sb_add_url(&p, current(chips, nchips, chip_at));
   sb_add(&p, "&lang=");
   sb_add_url(&p, current(langs, nlangs, lang_at));
+  if (next_episode) {
+    sb_add(&p, "&next=1&id=");
+    sb_add_url(&p, id);
+  }
   api_get(p.s, answered, (void *)(intptr_t)gen);
   sb_free(&p);
 }
@@ -165,7 +177,14 @@ static void refilter(void) {
   ask();
 }
 
+void sources_open_next(const char *t, const char *title_id, const char *video) {
+  sources_open(t, title_id, video, NULL);
+  next_episode = 1;
+  refilter();
+}
+
 void sources_open(const char *t, const char *title_id, const char *video, const char *title_name) {
+  next_episode = 0;
   free(type);
   free(id);
   free(vid);

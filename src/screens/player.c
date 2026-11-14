@@ -40,6 +40,16 @@ enum { VIEW_MEDIA, VIEW_AUDIO, VIEW_SUBS, VIEW_EPISODES, VIEW_SOURCES, VIEW_SETT
 static menu list;
 static int view, list_left;
 static char *episode_ids[MENU_MAX];
+
+/* the intro and recap to skip (seconds), the next episode by itself, and its countdown */
+#define MAX_SKIPS 8
+#define COUNTDOWN_MS 10000.0
+static struct {
+  double start, end;
+  int recap;
+} skips[MAX_SKIPS];
+static int nskips, binge;
+static double countdown_at; /* when the countdown to the next episode began, 0 when none */
 static char *want_type, *want_id, *want_vid; /* what was asked, to fall back on the sources */
 static double clock_now, bar_until, seek_target = -1, seek_base = -1, seek_at, last_report, toast_until;
 static char toast[256];
@@ -107,6 +117,28 @@ static void report(const char *event) {
 }
 
 /* ---------- starting ---------- */
+static void skips_came(const jval *answer, void *user) {
+  const jval *list = json_get(answer, "segments");
+  if ((intptr_t)user != gen) return;
+  nskips = 0;
+  for (int i = 0; i < json_len(list) && nskips < MAX_SKIPS; i++) {
+    const char *kind = json_str(json_get(json_at(list, i), "kind"), "");
+    if (strcmp(kind, "intro") && strcmp(kind, "recap")) continue;
+    skips[nskips].start = json_num(json_get(json_at(list, i), "start"), 0);
+    skips[nskips].end = json_num(json_get(json_at(list, i), "end"), 0);
+    skips[nskips].recap = !strcmp(kind, "recap");
+    nskips++;
+  }
+}
+
+/* the intro or recap being played now, or -1 */
+static int skip_now(void) {
+  double t = player_position() / 1000;
+  for (int i = 0; i < nskips; i++)
+    if (t >= skips[i].start && t < skips[i].end - 1) return i;
+  return -1;
+}
+
 static void started(const jval *answer, void *user) {
   const jval *in = json_get(answer, "info");
   if ((intptr_t)user != gen) return;
@@ -141,6 +173,14 @@ static void started(const jval *answer, void *user) {
     info.season_line = se.s;
   }
   seek_step = (int)json_num(json_get(answer, "seekStep"), 10);
+  binge = json_bool(json_get(answer, "binge"), 1);
+  if (info.vid) {
+    sbuf p = {0};
+    sb_add(&p, "/skips?vid=");
+    sb_add_url(&p, info.vid);
+    api_get(p.s, skips_came, (void *)(intptr_t)gen);
+    sb_free(&p);
+  }
   subs_reset(info.type, info.id, info.vid, json_str(json_get(answer, "ref"), ""), info.url,
              json_str(json_get(answer, "subtitleLanguage"), ""));
   double resume = json_num(json_get(answer, "resume"), 0);
@@ -172,6 +212,8 @@ void player_start(const char *type, const char *id, const char *vid, int seq) {
   seek_target = seek_base = -1;
   bar_until = 0;
   toast[0] = 0;
+  nskips = 0;
+  countdown_at = 0;
   sbuf p = {0};
   sb_add(&p, "/app/play?type=");
   sb_add_url(&p, type);
@@ -184,6 +226,18 @@ void player_start(const char *type, const char *id, const char *vid, int seq) {
   api_get(p.s, started, (void *)(intptr_t)gen);
   sb_free(&p);
   app_push(&player_screen);
+}
+
+/* on to the next episode: what was watched moves on, then its sources (the matching one plays) */
+static void go_next(void) {
+  char *type = str_dup(info.type), *title = str_dup(info.id), *episode = str_dup(info.next);
+  report("next");
+  player_close();
+  gen++;
+  countdown_at = 0;
+  app_back();
+  sources_open_next(type, title, episode);
+  free(type), free(title), free(episode);
 }
 
 static void leave(void) {
@@ -384,15 +438,7 @@ static void press_button(void) {
   else if (button == B_MEDIA) list_left = 1, open_view(VIEW_MEDIA);
   else if (button == B_EPISODES) list_left = 1, ask_list(VIEW_EPISODES, "/app/title?", episodes_came);
   else if (button == B_SOURCES) list_left = 1, ask_list(VIEW_SOURCES, "/app/streams?", sources_came);
-  else if (button == B_NEXT && info.next) {
-    char *type = str_dup(info.type), *title = str_dup(info.id), *episode = str_dup(info.next);
-    report("next");
-    player_close();
-    gen++;
-    app_back();
-    sources_open(type, title, episode, NULL);
-    free(type), free(title), free(episode);
-  }
+  else if (button == B_NEXT && info.next) go_next();
 }
 
 static void key(app_key k) {
@@ -401,7 +447,23 @@ static void key(app_key k) {
     leave();
     return;
   }
-  if (player_status() == PLAYER_FAILED) return;
+  if (countdown_at) {
+    if (k == K_OK) go_next();
+    return;
+  }
+  if (player_status() == PLAYER_FAILED) {
+    /* OK: another source of the same video */
+    if (k == K_OK) {
+      char *type = str_dup(info.type ? info.type : want_type), *title = str_dup(info.id ? info.id : want_id),
+           *video = str_dup(info.vid ? info.vid : want_vid);
+      player_close();
+      gen++;
+      app_back();
+      sources_open(type, title, video, NULL);
+      free(type), free(title), free(video);
+    }
+    return;
+  }
   if (list.open) {
     int id = menu_key(&list, k);
     if (id != -1 && id != -2) choose(id);
@@ -431,6 +493,7 @@ static void key(app_key k) {
   } else {
     if (k == K_UP) mode = MODE_BUTTONS;
     else if (k == K_DOWN) mode = MODE_SEEK;
+    else if (k == K_OK && skip_now() >= 0) player_seek(skips[skip_now()].end * 1000), report("seek");
     else if (k == K_OK) toggle();
     else if (k == K_LEFT) seek_by(-seek_step);
     else if (k == K_RIGHT) seek_by(seek_step);
@@ -568,6 +631,28 @@ static void draw_subtitle(void) {
   }
 }
 
+/* Skip intro / Skip recap, at the right over the bar (#skip): OK while it shows */
+static void draw_skip(void) {
+  int at = skip_now();
+  if (at < 0) return;
+  const char *label = txp(skips[at].recap ? "skipRecap" : "skipIntro", NULL);
+  float w = text_width(label, 26, W_BOLD) + 60, x = SC_DESIGN_W - 52 - w, y = SC_DESIGN_H - 230 - 64;
+  gfx_rect(x, y, w, 64, 12, SC_RGBA(20, 20, 22, 224));
+  gfx_outline(x, y, w, 64, 12, 2, C_TEXT(0.85f));
+  ui_line(label, x + 30, y, 64, 26, W_BOLD, C_WHITE);
+}
+
+/* the end of an episode: the next one in a few seconds, OK at once, Back leaves */
+static void draw_countdown(double t) {
+  gfx_rect(0, 0, SC_DESIGN_W, SC_DESIGN_H, 0, SC_RGBA(10, 10, 11, 235));
+  char secs[16];
+  snprintf(secs, sizeof secs, "%d", (int)((COUNTDOWN_MS - (t - countdown_at)) / 1000) + 1);
+  const char *title = txp("playNextIn", secs), *hint = txp("countdownHint", NULL);
+  float y = SC_DESIGN_H / 2 - 60;
+  text_draw(title, (SC_DESIGN_W - text_width(title, 52, W_EXTRABOLD)) / 2, y, 52, W_EXTRABOLD, C_WHITE);
+  text_draw(hint, (SC_DESIGN_W - text_width(hint, 26, W_SEMIBOLD)) / 2, y + 90, 26, W_SEMIBOLD, C_TEXT(0.78f));
+}
+
 static void draw_toast(void) {
   if (clock_now >= toast_until || !toast[0]) return;
   float w = text_width(toast, 24, W_SEMIBOLD) + 52, y = SC_DESIGN_H * 0.08f;
@@ -593,6 +678,15 @@ static void frame(double t, float dt) {
   player_state st = player_status();
   if (seek_target >= 0 && t - seek_at > SEEK_COMMIT_MS) commit_seek();
   if (st == PLAYER_PLAYING && t - last_report > REPORT_EVERY_MS) report("tick");
+  if (st == PLAYER_ENDED && binge && info.next) {
+    if (!countdown_at) countdown_at = t;
+    if (t - countdown_at >= COUNTDOWN_MS) {
+      go_next();
+      return;
+    }
+    draw_countdown(t);
+    return;
+  }
   if (st == PLAYER_ENDED) {
     leave();
     return;
@@ -609,6 +703,7 @@ static void frame(double t, float dt) {
     draw_subtitle();
     if (t < bar_until || st == PLAYER_PAUSED || seek_target >= 0 || list.open) draw_bar();
     draw_seek_amount();
+    draw_skip();
     menu_draw(&list, list_left ? 52 : SC_DESIGN_W - 52 - 384, SC_DESIGN_H - 190);
   }
   draw_toast();

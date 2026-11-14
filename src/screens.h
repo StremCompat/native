@@ -23,6 +23,8 @@ void app_back(void);
 /* screens opened on something */
 void title_open(const char *type, const char *id);
 void sources_open(const char *type, const char *id, const char *video, const char *name);
+/* the sources of the next episode: the one like the source just played starts by itself */
+void sources_open_next(const char *type, const char *id, const char *video);
 /* a source of the last search by its number, or with seq < 0 the one played last time */
 void player_start(const char *type, const char *id, const char *vid, int seq);
 
