@@ -72,3 +72,8 @@ int player_audio_tracks(player_track *out, int max) {
 static int audio;
 int player_audio_current(void) { return audio; }
 void player_select_audio(int index) { audio = index; }
+
+int player_set_speed(double rate) {
+  (void)rate;
+  return 1;
+}

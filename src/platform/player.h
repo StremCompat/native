@@ -31,4 +31,7 @@ int player_audio_tracks(player_track *out, int max);
 int player_audio_current(void);
 void player_select_audio(int index);
 
+/* playback speed, 1 being normal; 0 when the system refused */
+int player_set_speed(double rate);
+
 #endif

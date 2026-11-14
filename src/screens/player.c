@@ -44,7 +44,15 @@ static uint32_t sub_color = 0xFFFFFFFF, sub_outline = 0x000000FF;
 static int auto_next_count;
 
 /* the menu over the buttons: what it lists, and the episodes and sources it got for that */
-enum { VIEW_MEDIA, VIEW_AUDIO, VIEW_SUBS, VIEW_EPISODES, VIEW_SOURCES, VIEW_SETTINGS };
+enum { VIEW_MEDIA, VIEW_AUDIO, VIEW_SUBS, VIEW_EPISODES, VIEW_SOURCES, VIEW_SETTINGS, VIEW_SPEED, VIEW_DELAY, VIEW_CHAPTERS };
+
+/* the settings button: speed, subtitle delay, and the chapters when the file has some */
+static const double speeds[] = {0.75, 1, 1.25, 1.5};
+static double speed = 1;
+#define MAX_CHAPTERS 80
+static double chapter_at[MAX_CHAPTERS];
+static char chapter_name[MAX_CHAPTERS][64];
+static int nchapters;
 static menu list;
 static int view, list_left;
 static char *episode_ids[MENU_MAX];
@@ -126,6 +134,17 @@ static uint32_t hex_color(const char *hex) {
   return SC_RGBA((v >> 16) & 255, (v >> 8) & 255, v & 255, 255);
 }
 
+/* the file's chapters, read by the server (FFprobe) */
+static void probe_came(const jval *answer, void *user) {
+  if ((intptr_t)user != gen) return;
+  const jval *marks = json_get(answer, "chapters");
+  nchapters = 0;
+  for (int i = 0; i < json_len(marks) && nchapters < MAX_CHAPTERS; i++, nchapters++) {
+    chapter_at[nchapters] = json_num(json_get(json_at(marks, i), "t"), 0);
+    snprintf(chapter_name[nchapters], sizeof chapter_name[0], "%s", json_str(json_get(json_at(marks, i), "name"), ""));
+  }
+}
+
 /* ---------- starting ---------- */
 static void skips_came(const jval *answer, void *user) {
   const jval *list = json_get(answer, "segments");
@@ -200,6 +219,14 @@ static void started(const jval *answer, void *user) {
              json_str(json_get(answer, "subtitleLanguage"), ""));
   double resume = json_num(json_get(answer, "resume"), 0);
   player_open(info.url, resume);
+  speed = 1;
+  nchapters = 0;
+  subs_set_delay(0);
+  sbuf probe = {0};
+  sb_add(&probe, "/probe?u=");
+  sb_add_url(&probe, info.url);
+  api_get(probe.s, probe_came, (void *)(intptr_t)gen);
+  sb_free(&probe);
   if (resume > 0) {
     char at[32];
     format_time(at, sizeof at, resume);
@@ -391,6 +418,40 @@ static void open_view(int which) {
       menu_add(&list, row, i == player_audio_current(), i);
     }
     if (!n) menu_add(&list, txp("defaultAudio", NULL), 1, 0);
+  } else if (which == VIEW_SETTINGS) {
+    char row[160];
+    menu_begin(&list, tx("navSettings"));
+    snprintf(row, sizeof row, "%s: %gx \xE2\x80\xBA", txp("speed", NULL), speed);
+    menu_add(&list, row, 0, VIEW_SPEED);
+    snprintf(row, sizeof row, "%s: %+.1fs \xE2\x80\xBA", txp("delay", NULL), subs_delay());
+    menu_add(&list, row, 0, VIEW_DELAY);
+    if (nchapters) {
+      snprintf(row, sizeof row, "%s \xE2\x80\xBA", txp("chapters", NULL));
+      menu_add(&list, row, 0, VIEW_CHAPTERS);
+    }
+  } else if (which == VIEW_SPEED) {
+    menu_begin(&list, txp("speed", NULL));
+    for (int i = 0; i < 4; i++) {
+      char row[32];
+      snprintf(row, sizeof row, "%gx", speeds[i]);
+      menu_add(&list, row, speeds[i] == speed, i);
+    }
+  } else if (which == VIEW_DELAY) {
+    menu_begin(&list, txp("delay", NULL));
+    for (int i = 0; i <= 12; i++) {
+      double d = (i - 6) * 0.5;
+      char row[32];
+      snprintf(row, sizeof row, "%+.1fs", d);
+      menu_add(&list, row, d == subs_delay(), i);
+    }
+  } else if (which == VIEW_CHAPTERS) {
+    menu_begin(&list, txp("chapters", NULL));
+    for (int i = 0; i < nchapters; i++) {
+      char row[160], at[32];
+      format_time(at, sizeof at, chapter_at[i] * 1000);
+      snprintf(row, sizeof row, "%s%s%.60s", at, chapter_name[i][0] ? "  \xC2\xB7  " : "", chapter_name[i]);
+      menu_add(&list, row, 0, i);
+    }
   } else if (which == VIEW_SUBS) {
     menu_begin(&list, txp("subtitles", NULL));
     menu_add(&list, txp("off", NULL), subs_current() < 0, ROW_OFF);
@@ -458,9 +519,18 @@ static void choose(int id) {
     list.open = 0;
     return;
   }
-  if (view == VIEW_MEDIA) {
+  if (view == VIEW_MEDIA || view == VIEW_SETTINGS) {
     open_view(id);
     return;
+  }
+  if (view == VIEW_SPEED) {
+    if (player_set_speed(speeds[id])) speed = speeds[id];
+    else ui_toast(txp("speedRefused", NULL));
+  } else if (view == VIEW_DELAY) {
+    subs_set_delay((id - 6) * 0.5);
+  } else if (view == VIEW_CHAPTERS) {
+    player_seek(chapter_at[id] * 1000);
+    report("seek");
   }
   if (view == VIEW_AUDIO) player_select_audio(id);
   else if (view == VIEW_SUBS) subs_choose(id);
@@ -487,6 +557,7 @@ static void press_button(void) {
   else if (button == B_REWIND) seek_by(-seek_step);
   else if (button == B_FORWARD) seek_by(seek_step);
   else if (button == B_MEDIA) list_left = 1, open_view(VIEW_MEDIA);
+  else if (button == B_SETTINGS) list_left = 0, open_view(VIEW_SETTINGS);
   else if (button == B_EPISODES) list_left = 1, ask_list(VIEW_EPISODES, "/app/title?", episodes_came);
   else if (button == B_SOURCES) list_left = 1, ask_list(VIEW_SOURCES, "/app/streams?", sources_came);
   else if (button == B_NEXT && info.next) go_next();

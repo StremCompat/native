@@ -209,6 +209,13 @@ int player_audio_tracks(player_track *out, int max) {
 
 int player_audio_current(void) { return audio_at; }
 
+int player_set_speed(double rate) {
+  char payload[200];
+  if (!media_id[0]) return 0;
+  snprintf(payload, sizeof payload, "{\"mediaId\":\"%s\",\"playRate\":%.2f,\"audioOutput\":true}", media_id, rate);
+  return call("setPlayRate", payload, NULL, NULL);
+}
+
 void player_select_audio(int index) {
   char payload[200];
   if (!media_id[0] || index < 0 || index >= ntracks) return;

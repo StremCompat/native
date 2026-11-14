@@ -21,7 +21,7 @@ static sub_choice choices[MAX_CHOICES];
 static int nchoices, current = -1, gen, decided;
 static cue *cues;
 static int ncues, cap_cues, reading_done, polling;
-static double last_poll;
+static double last_poll, delay;
 
 static char *copy(const char *s) { return s ? str_dup(s) : NULL; }
 
@@ -183,8 +183,11 @@ void subs_tick(double position_ms) {
   sb_free(&p);
 }
 
+void subs_set_delay(double seconds) { delay = seconds; }
+double subs_delay(void) { return delay; }
+
 const char *subs_text(double position_ms) {
-  double t = position_ms / 1000;
+  double t = position_ms / 1000 - delay;
   for (int i = 0; i < ncues; i++)
     if (t >= cues[i].start && t < cues[i].end) return cues[i].text;
   return NULL;

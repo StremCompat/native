@@ -18,6 +18,9 @@ int subs_current(void);
 void subs_choose(int i);
 /* once in a while with the position: the lines of a subtitle read from the file keep coming */
 void subs_tick(double position_ms);
+/* the subtitles later (positive) or earlier, in seconds */
+void subs_set_delay(double seconds);
+double subs_delay(void);
 /* the line to show at this moment, or NULL */
 const char *subs_text(double position_ms);
 
