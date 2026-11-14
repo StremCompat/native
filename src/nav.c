@@ -45,6 +45,7 @@ int nav_key(app_key k) {
     else if (chosen == NAV_LIBRARY) app_show(&library_screen);
     else if (chosen == NAV_DISCOVER) app_show(&discover_screen);
     else if (chosen == NAV_SETTINGS) app_show(&settings_screen);
+    else if (chosen == NAV_ADDONS) app_show(&addons_screen);
     return chosen;
   }
   return -1;
