@@ -9,6 +9,8 @@ set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ZIG="${ZIG:-$HOME/stremcompat-build/tools/zig/zig}"
 TARGET="${1:-win}"
+# the version the local server must report before the app talks to it (screens/boot.c)
+VERSION="${APP_VERSION:-5.0.0}"
 SRC=$(ls "$HERE"/src/*.c "$HERE"/src/core/*.c "$HERE"/src/screens/*.c 2>/dev/null)
 CFLAGS="-std=c11 -O2 -Wall -Wextra -Wno-unused-parameter -I$HERE/src -I$HERE/src/core -I$HERE/src/platform -I$HERE/third_party/stb"
 
@@ -30,7 +32,7 @@ case "$TARGET" in
     SYSROOT="$TC/arm-webos-linux-gnueabi/sysroot"
     OUT="$HERE/build/webos"
     mkdir -p "$OUT"
-    "$TC/bin/arm-webos-linux-gnueabi-gcc" $CFLAGS -D_GNU_SOURCE -DIMG_BUDGET="(48u << 20)" -I"$SYSROOT/usr/include/SDL2" \
+    "$TC/bin/arm-webos-linux-gnueabi-gcc" $CFLAGS -D_GNU_SOURCE -DAPP_VERSION="\"$VERSION\"" -DIMG_BUDGET="(48u << 20)" -I"$SYSROOT/usr/include/SDL2" \
       -I"$SYSROOT/usr/include/glib-2.0" -I"$SYSROOT/usr/lib/glib-2.0/include" \
       $SRC "$HERE/src/platform/webos.c" "$HERE/src/platform/webos_player.c" "$HERE/src/platform/webos_luna.c" \
       -Wl,--as-needed -lSDL2 -lluna-service2 -lglib-2.0 -ldl -lpthread -lm -o "$OUT/stremcompat"
@@ -47,7 +49,7 @@ case "$TARGET" in
     OUT="$HERE/build/tizen"
     mkdir -p "$OUT"
     WEB_SRC=$(ls $SRC | grep -v '/core/net.c$')
-    emcc $CFLAGS -DIMG_BUDGET="(48u << 20)" -sUSE_SDL=2 -sALLOW_MEMORY_GROWTH -sMAX_WEBGL_VERSION=1 -sFULL_ES2 -sWASM=2 -sMIN_CHROME_VERSION=56 \
+    emcc $CFLAGS -DAPP_VERSION="\"$VERSION\"" -DIMG_BUDGET="(48u << 20)" -sUSE_SDL=2 -sALLOW_MEMORY_GROWTH -sMAX_WEBGL_VERSION=1 -sFULL_ES2 -sWASM=2 -sMIN_CHROME_VERSION=56 \
       -sEXPORTED_RUNTIME_METHODS=UTF8ToString,stringToUTF8 -sEXPORTED_FUNCTIONS=_main,_malloc \
       --preload-file "$HERE/assets@assets" $WEB_SRC "$HERE/src/platform/tizen.c" "$HERE/src/platform/tizen_player.c" \
       "$HERE/src/platform/web_net.c" -o "$OUT/stremcompat.js"

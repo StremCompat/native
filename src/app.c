@@ -108,25 +108,25 @@ void app_event(const SDL_Event *ev) {
 
 int app_wants_quit(void) { return quit; }
 
-/* the texts and the icons, then Home. The server starts with the app on the TV, so its first
-   answer may take a moment: it is waited for up to 30 seconds. */
+static char language[32];
+
+const char *app_language(void) { return language; }
+
+/* the icons, then the screen that waits for the server, which starts with the app on the TV */
 int app_start(void) {
   if (ui_init()) return -1;
-  platform_start_server();
-  /* the server answers once it is up, told the TV's language for the texts that follow */
-  char language[32], path[96];
   platform_language(language, sizeof language);
+  platform_start_server();
+  app_show(&boot_screen);
+  return 0;
+}
+
+void app_ready(void) {
+  /* the server is told the TV's language for the texts that follow */
+  char path[96];
   snprintf(path, sizeof path, "/app/state?tvLanguage=%s", language);
   net_reply r = {0};
-  for (int i = 0; i < 120; i++) {
-    net_fetch(path, NULL, &r);
-    if (r.status == 200) break;
-    free(r.body);
-    r.body = NULL;
-    /* the system expects the window to keep answering while the server starts */
-    SDL_PumpEvents();
-    SDL_Delay(250);
-  }
+  net_fetch(path, NULL, &r);
   api_load_strings();
   /* signed in: Home, or for a Nuvio account who is watching first; otherwise signing in */
   jdoc *d = r.status == 200 && r.body ? json_parse(r.body, r.len) : NULL;
@@ -137,7 +137,6 @@ int app_start(void) {
   update_check();
   json_free(d);
   free(r.body);
-  return 0;
 }
 
 void app_frame(int w, int h, double t) {

@@ -15,8 +15,12 @@ void app_event(const SDL_Event *ev);
 void app_frame(int w, int h, double t);
 int app_wants_quit(void);
 void app_quit(void);
-/* after the window and the server connection are ready: texts, icons, the first screen */
+/* after the window is ready: the icons, the server started, and the screen that waits for it */
 int app_start(void);
+/* the server answers: the texts, then the first real screen (screens/boot.c) */
+void app_ready(void);
+/* the TV's language as "pt-BR", or "" */
+const char *app_language(void);
 
 /* Runs a test script offscreen: one command per line, "key down", "wait 300", "shot name".
    Time is virtual, so animations land at the same point on every run. */

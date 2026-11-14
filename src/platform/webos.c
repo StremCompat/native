@@ -93,9 +93,32 @@ void platform_language(char *out, int size) {
   snprintf(out, (size_t)size, "%s", language);
 }
 
-/* the service starts the local server (service/launch.js); the call is what wakes it */
+/* the service starts the local server (service/launch.js); the call is what wakes it. A refusal
+   is told on screen, with what the service saw, as the web launcher did. */
+static bool start_answered(LSHandle *sh, LSMessage *msg, void *ctx) {
+  (void)sh;
+  (void)ctx;
+  const char *text = LSMessageGetPayload(msg);
+  jdoc *d = text ? json_parse(text, strlen(text)) : NULL;
+  const jval *root = json_root(d);
+  if (!json_bool(json_get(root, "returnValue"), 1)) {
+    char message[300];
+    snprintf(message, sizeof message, "StremCompat service: %s %s", json_str(json_get(root, "errorText"), ""),
+             json_str(json_get(root, "log"), json_str(json_get(root, "reason"), "")));
+    fprintf(stderr, "%s\n", message);
+    platform_fatal(message);
+  }
+  json_free(d);
+  return true;
+}
+
 void platform_start_server(void) {
-  luna_call("luna://io.github.alexesmm.legacytv.server/start", "{}", NULL, NULL);
+  LSMessageToken token;
+  if (!luna_call("luna://io.github.alexesmm.legacytv.server/start", "{}", start_answered, &token)) {
+    char message[300];
+    snprintf(message, sizeof message, "StremCompat service: %s", luna_error());
+    platform_fatal(message);
+  }
   luna_poll();
 }
 
