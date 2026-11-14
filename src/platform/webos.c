@@ -32,6 +32,36 @@ app_key platform_key(const SDL_Event *ev) {
 
 void platform_poll(void) { luna_poll(); }
 
+/* the system settings know the language of the TV's menus (localeInfo.locales.UI) */
+static char language[32];
+static int language_answered;
+
+static bool language_came(LSHandle *sh, LSMessage *msg, void *ctx) {
+  (void)sh;
+  (void)ctx;
+  const char *text = LSMessageGetPayload(msg);
+  jdoc *d = text ? json_parse(text, strlen(text)) : NULL;
+  const jval *ui = json_get(json_get(json_get(json_get(json_root(d), "settings"), "localeInfo"), "locales"), "UI");
+  snprintf(language, sizeof language, "%s", json_str(ui, ""));
+  json_free(d);
+  language_answered = 1;
+  return true;
+}
+
+void platform_language(char *out, int size) {
+  LSMessageToken token;
+  out[0] = 0;
+  if (!luna_call("luna://com.webos.settingsservice/getSystemSettings", "{\"keys\":[\"localeInfo\"]}", language_came, &token))
+    return;
+  /* asked once at the start; the answer comes in a moment */
+  for (int i = 0; i < 40 && !language_answered; i++) {
+    luna_poll();
+    SDL_Delay(25);
+  }
+  luna_cancel(token);
+  snprintf(out, (size_t)size, "%s", language);
+}
+
 /* the service starts the local server (service/launch.js); the call is what wakes it */
 void platform_start_server(void) {
   luna_call("luna://io.github.alexesmm.legacytv.server/start", "{}", NULL, NULL);

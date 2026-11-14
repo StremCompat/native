@@ -16,6 +16,9 @@ app_key platform_key(const SDL_Event *ev);
 /* once per frame: the system's news (webOS bus answers) */
 void platform_poll(void);
 
+/* the TV's language as "pt-BR", or "" when the system does not say */
+void platform_language(char *out, int size);
+
 /* starts the app's own local server where the system runs it as a service (webOS) */
 void platform_start_server(void);
 

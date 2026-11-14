@@ -112,10 +112,20 @@ int app_wants_quit(void) { return quit; }
 int app_start(void) {
   if (ui_init()) return -1;
   platform_start_server();
-  for (int i = 0; i < 120 && api_load_strings(); i++) SDL_Delay(250);
+  /* the server answers once it is up, told the TV's language for the texts that follow */
+  char language[32], path[96];
+  platform_language(language, sizeof language);
+  snprintf(path, sizeof path, "/app/state?tvLanguage=%s", language);
+  net_reply r = {0};
+  for (int i = 0; i < 120; i++) {
+    net_fetch(path, NULL, &r);
+    if (r.status == 200) break;
+    free(r.body);
+    r.body = NULL;
+    SDL_Delay(250);
+  }
+  api_load_strings();
   /* signed in: Home, or for a Nuvio account who is watching first; otherwise signing in */
-  net_reply r;
-  net_fetch("/app/state", NULL, &r);
   jdoc *d = r.status == 200 && r.body ? json_parse(r.body, r.len) : NULL;
   const jval *st = json_root(d);
   if (!json_bool(json_get(st, "signedIn"), 0)) app_show(&login_screen);

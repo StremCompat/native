@@ -11,6 +11,14 @@ void platform_init(void) {}
 
 void platform_poll(void) {}
 
+void platform_language(char *out, int size) {
+  SDL_Locale *list = SDL_GetPreferredLocales();
+  out[0] = 0;
+  if (list && list[0].language)
+    snprintf(out, (size_t)size, "%s%s%s", list[0].language, list[0].country ? "-" : "", list[0].country ? list[0].country : "");
+  SDL_free(list);
+}
+
 /* on the computer there is nothing to install into */
 void platform_install_update(void (*done)(const char *error)) { done(NULL); }
 
