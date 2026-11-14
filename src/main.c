@@ -14,6 +14,10 @@
 #include "text.h"
 #include "util.h"
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
+
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #define STBIW_WINDOWS_UTF8
 #include "stb_image_write.h"
@@ -49,6 +53,27 @@ static int save_shot(const char *path, int w, int h) {
   return ok ? 0 : -1;
 }
 
+static SDL_Window *win;
+static int running = 1;
+
+/* one frame: the events, the network's answers, the screens */
+static void step(void) {
+  SDL_Event ev;
+  while (SDL_PollEvent(&ev)) {
+    if (ev.type == SDL_QUIT) running = 0;
+    else app_event(&ev);
+  }
+  int w, h;
+  SDL_GL_GetDrawableSize(win, &w, &h);
+  text_set_scale((float)h / SC_DESIGN_H);
+  double t = now_ms();
+  net_poll();
+  img_frame(t);
+  app_frame(w, h, t);
+  SDL_GL_SwapWindow(win);
+  if (app_wants_quit()) running = 0;
+}
+
 int main(int argc, char **argv) {
   const char *shot = NULL, *script = NULL;
   int win_w = 1280, win_h = 720, port = 8082;
@@ -67,11 +92,15 @@ int main(int argc, char **argv) {
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
   SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+#if defined(__EMSCRIPTEN__) || defined(__ANDROID__)
+  /* the video plays under the window: it needs see-through pixels */
+  SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, 8);
+#endif
   Uint32 flags = SDL_WINDOW_OPENGL | (shot ? SDL_WINDOW_HIDDEN : platform_window_flags());
   /* a whole-screen window takes the screen's own size (720p or 1080p panels alike) */
   SDL_DisplayMode screen;
   if ((flags & SDL_WINDOW_FULLSCREEN) && SDL_GetDesktopDisplayMode(0, &screen) == 0) win_w = screen.w, win_h = screen.h;
-  SDL_Window *win = SDL_CreateWindow("StremCompat", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, win_w, win_h, flags);
+  win = SDL_CreateWindow("StremCompat", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, win_w, win_h, flags);
   if (!win) {
     fprintf(stderr, "window: %s\n", SDL_GetError());
     return 1;
@@ -108,23 +137,11 @@ int main(int argc, char **argv) {
     return rc;
   }
 
-  int running = 1;
-  while (running) {
-    SDL_Event ev;
-    while (SDL_PollEvent(&ev)) {
-      if (ev.type == SDL_QUIT) running = 0;
-      else app_event(&ev);
-    }
-    int w, h;
-    SDL_GL_GetDrawableSize(win, &w, &h);
-    text_set_scale((float)h / SC_DESIGN_H);
-    double t = now_ms();
-    net_poll();
-    img_frame(t);
-    app_frame(w, h, t);
-    SDL_GL_SwapWindow(win);
-    if (app_wants_quit()) running = 0;
-  }
+#ifdef __EMSCRIPTEN__
+  /* the browser calls each frame; this never returns */
+  emscripten_set_main_loop(step, 0, 1);
+#endif
+  while (running) step();
   net_shutdown();
   SDL_GL_DeleteContext(ctx);
   SDL_DestroyWindow(win);

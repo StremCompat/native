@@ -2,6 +2,7 @@
 # Builds StremCompat with Zig as the C compiler, for one target:
 #   ./build.sh win      Windows x64, for development and the screenshot tests
 #   ./build.sh webos    LG webOS (ARM)
+#   ./build.sh tizen    Samsung Tizen: WebAssembly for the web package (Emscripten)
 #   ./build.sh android  the assets the Android TV app packs (the code is built by its Gradle project)
 #   ./build.sh test     the unit tests (Windows)
 set -euo pipefail
@@ -37,6 +38,20 @@ case "$TARGET" in
     rm -rf "$OUT/assets"
     cp -r "$HERE/assets" "$OUT/assets"
     echo "built $OUT/stremcompat"
+    ;;
+  tizen)
+    # WebAssembly with SDL2 and WebGL from Emscripten, and the same in plain JavaScript for the TVs
+    # without WebAssembly (Tizen 4); the network and the player go through the page
+    EMSDK="${EMSDK:-$HOME/stremcompat-build/emsdk}"
+    source "$EMSDK/emsdk_env.sh" >/dev/null 2>&1
+    OUT="$HERE/build/tizen"
+    mkdir -p "$OUT"
+    WEB_SRC=$(ls $SRC | grep -v '/core/net.c$')
+    emcc $CFLAGS -DIMG_BUDGET="(48u << 20)" -sUSE_SDL=2 -sALLOW_MEMORY_GROWTH -sMAX_WEBGL_VERSION=1 -sFULL_ES2 -sWASM=2 -sMIN_CHROME_VERSION=56 \
+      -sEXPORTED_RUNTIME_METHODS=UTF8ToString,stringToUTF8 -sEXPORTED_FUNCTIONS=_main,_malloc \
+      --preload-file "$HERE/assets@assets" $WEB_SRC "$HERE/src/platform/tizen.c" "$HERE/src/platform/tizen_player.c" \
+      "$HERE/src/platform/web_net.c" -o "$OUT/stremcompat.js"
+    echo "built $OUT/stremcompat.js"
     ;;
   android)
     # public-repo/android builds the code with CMake (app/src/main/cpp); this stages the assets
