@@ -9,6 +9,8 @@
 
 void platform_init(void) {}
 
+Uint32 platform_window_flags(void) { return SDL_WINDOW_RESIZABLE; }
+
 void platform_poll(void) {}
 
 void platform_language(char *out, int size) {

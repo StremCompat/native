@@ -67,7 +67,10 @@ int main(int argc, char **argv) {
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
   SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-  Uint32 flags = SDL_WINDOW_OPENGL | (shot ? SDL_WINDOW_HIDDEN : SDL_WINDOW_RESIZABLE);
+  Uint32 flags = SDL_WINDOW_OPENGL | (shot ? SDL_WINDOW_HIDDEN : platform_window_flags());
+  /* a whole-screen window takes the screen's own size (720p or 1080p panels alike) */
+  SDL_DisplayMode screen;
+  if ((flags & SDL_WINDOW_FULLSCREEN) && SDL_GetDesktopDisplayMode(0, &screen) == 0) win_w = screen.w, win_h = screen.h;
   SDL_Window *win = SDL_CreateWindow("StremCompat", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, win_w, win_h, flags);
   if (!win) {
     fprintf(stderr, "window: %s\n", SDL_GetError());

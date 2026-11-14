@@ -8,6 +8,8 @@
 
 /* before SDL starts: the system's own settings for the window and the remote */
 void platform_init(void);
+/* the window: a TV takes the whole screen, a computer a window of its own */
+Uint32 platform_window_flags(void);
 
 /* the system's own remote buttons (Back, colours...); K_NONE for the usual keys, which the
    app reads the same way everywhere */
