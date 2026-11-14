@@ -122,6 +122,8 @@ int app_start(void) {
     if (r.status == 200) break;
     free(r.body);
     r.body = NULL;
+    /* the system expects the window to keep answering while the server starts */
+    SDL_PumpEvents();
     SDL_Delay(250);
   }
   api_load_strings();
