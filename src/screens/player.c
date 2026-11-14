@@ -35,6 +35,14 @@ static play_info info;
 static int gen, ready, mode, button = B_PLAY, seek_step = 10, resuming;
 static int live; /* a channel: no length, no seeking, nothing kept */
 
+/* Settings > Subtitles: their size, colour, outline and background strength */
+static float sub_size = 38, sub_background;
+static uint32_t sub_color = 0xFFFFFFFF, sub_outline = 0x000000FF;
+
+/* episodes started by the countdown with nobody touching the remote; at 3 it asks first */
+#define AUTO_NEXT_LIMIT 3
+static int auto_next_count;
+
 /* the menu over the buttons: what it lists, and the episodes and sources it got for that */
 enum { VIEW_MEDIA, VIEW_AUDIO, VIEW_SUBS, VIEW_EPISODES, VIEW_SOURCES, VIEW_SETTINGS };
 static menu list;
@@ -111,6 +119,13 @@ static void report(const char *event) {
   last_report = clock_now;
 }
 
+/* "#rrggbb" as a colour */
+static uint32_t hex_color(const char *hex) {
+  unsigned v = 0xFFFFFF;
+  if (hex && hex[0] == '#') sscanf(hex + 1, "%6x", &v);
+  return SC_RGBA((v >> 16) & 255, (v >> 8) & 255, v & 255, 255);
+}
+
 /* ---------- starting ---------- */
 static void skips_came(const jval *answer, void *user) {
   const jval *list = json_get(answer, "segments");
@@ -168,6 +183,11 @@ static void started(const jval *answer, void *user) {
     info.season_line = se.s;
   }
   seek_step = (int)json_num(json_get(answer, "seekStep"), 10);
+  const jval *style = json_get(answer, "subtitleStyle");
+  sub_size = (float)json_num(json_get(style, "size"), 38);
+  sub_color = hex_color(json_str(json_get(style, "color"), "#ffffff"));
+  sub_outline = hex_color(json_str(json_get(style, "outline"), "#000000"));
+  sub_background = (float)json_num(json_get(style, "background"), 0);
   binge = json_bool(json_get(answer, "binge"), 1);
   if (info.vid) {
     sbuf p = {0};
@@ -474,12 +494,17 @@ static void press_button(void) {
 
 static void key(app_key k) {
   bar_until = clock_now + BAR_SHOW_MS;
+  /* any key means someone is watching */
+  if (!countdown_at) auto_next_count = 0;
   if (k == K_BACK && !list.open) {
     leave();
     return;
   }
   if (countdown_at) {
-    if (k == K_OK) go_next();
+    if (k == K_OK) {
+      auto_next_count = 0;
+      go_next();
+    }
     return;
   }
   if (player_status() == PLAYER_FAILED) {
@@ -655,12 +680,37 @@ static void draw_subtitle(void) {
     lines[n++][len] = 0;
     p += len + (end ? 1 : 0);
   }
-  float lh = 38 * 1.35f, y = SC_DESIGN_H * 0.92f - n * lh, max_w = SC_DESIGN_W * 0.88f;
+  float size = sub_size, lh = size * 1.35f, y = SC_DESIGN_H * 0.92f - n * lh, max_w = SC_DESIGN_W * 0.88f;
   for (int i = 0; i < n; i++, y += lh) {
-    float w = text_width(lines[i], 38, W_REGULAR), x = w < max_w ? (SC_DESIGN_W - w) / 2 : SC_DESIGN_W * 0.06f;
-    text_draw_fit(lines[i], x + 2, y + 3, max_w, 38, W_REGULAR, SC_RGBA(0, 0, 0, 200));
-    text_draw_fit(lines[i], x, y, max_w, 38, W_REGULAR, C_WHITE);
+    float w = text_width(lines[i], size, W_REGULAR), x = w < max_w ? (SC_DESIGN_W - w) / 2 : SC_DESIGN_W * 0.06f;
+    if (sub_background > 0)
+      gfx_rect(x - 14, y, (w < max_w ? w : max_w) + 28, lh, 6, SC_RGBA(0, 0, 0, (int)(255 * sub_background)));
+    /* the outline: the line drawn around itself in the outline colour */
+    static const float around[8][2] = {{-2, 0}, {2, 0}, {0, -2}, {0, 2}, {-2, -2}, {2, 2}, {-2, 2}, {2, -2}};
+    for (int o = 0; o < 8; o++) text_draw_fit(lines[i], x + around[o][0], y + around[o][1], max_w, size, W_REGULAR, sub_outline);
+    text_draw_fit(lines[i], x, y, max_w, size, W_REGULAR, sub_color);
   }
+}
+
+/* paused, once the bar has gone: the title over a shade, as the web pause screen (#pv) */
+static void draw_paused(void) {
+  gfx_gradient(0, 0, SC_DESIGN_W * 0.58f, SC_DESIGN_H, 0, SC_RGBA(0, 0, 0, 209), SC_RGBA(0, 0, 0, 0), 0);
+  gfx_gradient(0, SC_DESIGN_H * 0.65f, SC_DESIGN_W, SC_DESIGN_H * 0.35f, 0, SC_RGBA(0, 0, 0, 0), SC_RGBA(0, 0, 0, 166), 1);
+  char label[64];
+  utf8_upper(label, sizeof label, txp("paused", NULL));
+  float x = 56, y = 76;
+  text_draw(label, x, y, 23, W_REGULAR, C_TEXT(0.72f));
+  y += 40;
+  const sc_tex *logo = img_get(info.logo, 640, NULL);
+  if (logo) {
+    float w = 640, h = logo->h * (640.0f / logo->w);
+    if (h > 210) w *= 210 / h, h = 210;
+    gfx_image(logo, x, y, w, h, 0, 1, STRETCH);
+    y += h + 12;
+  } else if (info.title) {
+    y += text_draw_wrap(info.title, x, y, SC_DESIGN_W * 0.58f, 62, W_EXTRABOLD, C_WHITE, 2, 67) + 12;
+  }
+  if (info.season_line) text_draw_fit(info.season_line, x, y, SC_DESIGN_W * 0.58f, 28, W_SEMIBOLD, C_TEXT(0.78f));
 }
 
 /* Skip intro / Skip recap, at the right over the bar (#skip): OK while it shows */
@@ -679,7 +729,9 @@ static void draw_countdown(double t) {
   gfx_rect(0, 0, SC_DESIGN_W, SC_DESIGN_H, 0, SC_RGBA(10, 10, 11, 235));
   char secs[16];
   snprintf(secs, sizeof secs, "%d", (int)((COUNTDOWN_MS - (t - countdown_at)) / 1000) + 1);
-  const char *title = txp("playNextIn", secs), *hint = txp("countdownHint", NULL);
+  int asking = auto_next_count >= AUTO_NEXT_LIMIT;
+  const char *title = asking ? txp("stillWatching", NULL) : txp("playNextIn", secs);
+  const char *hint = asking ? txp("keepWatching", NULL) : txp("countdownHint", NULL);
   float y = SC_DESIGN_H / 2 - 60;
   text_draw(title, (SC_DESIGN_W - text_width(title, 52, W_EXTRABOLD)) / 2, y, 52, W_EXTRABOLD, C_WHITE);
   text_draw(hint, (SC_DESIGN_W - text_width(hint, 26, W_SEMIBOLD)) / 2, y + 90, 26, W_SEMIBOLD, C_TEXT(0.78f));
@@ -706,7 +758,8 @@ static void frame(double t, float dt) {
   if (st == PLAYER_PLAYING && t - last_report > REPORT_EVERY_MS) report("tick");
   if (st == PLAYER_ENDED && binge && info.next) {
     if (!countdown_at) countdown_at = t;
-    if (t - countdown_at >= COUNTDOWN_MS) {
+    if (t - countdown_at >= COUNTDOWN_MS && auto_next_count < AUTO_NEXT_LIMIT) {
+      auto_next_count++;
       go_next();
       return;
     }
@@ -727,7 +780,8 @@ static void frame(double t, float dt) {
     if (player_buffering()) gfx_rect(0, 0, SC_DESIGN_W, SC_DESIGN_H, 0, SC_RGBA(10, 10, 11, 128));
     subs_tick(player_position());
     draw_subtitle();
-    if (t < bar_until || st == PLAYER_PAUSED || seek_target >= 0 || list.open) draw_bar();
+    if (st == PLAYER_PAUSED && t >= bar_until && !list.open) draw_paused();
+    else if (t < bar_until || st == PLAYER_PAUSED || seek_target >= 0 || list.open) draw_bar();
     draw_seek_amount();
     draw_skip();
     menu_draw(&list, list_left ? 52 : SC_DESIGN_W - 52 - 384, SC_DESIGN_H - 190);
