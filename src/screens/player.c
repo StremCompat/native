@@ -189,6 +189,39 @@ static void started(const jval *answer, void *user) {
   ready = 1;
 }
 
+/* a trailer: only the picture and the bar, nothing kept of it */
+static void trailer_came(const jval *answer, void *user) {
+  if ((intptr_t)user != gen) return;
+  const char *url = json_str(json_get(answer, "url"), NULL);
+  if (!url) {
+    ui_toast(json_str(json_get(answer, "error"), tx("trailerUnavailable")));
+    return;
+  }
+  clear_info();
+  info.url = str_dup(url);
+  info.title = copy(json_get(answer, "name"));
+  mode = MODE_VIDEO;
+  button = B_PLAY;
+  seek_target = seek_base = -1;
+  nskips = 0;
+  countdown_at = 0;
+  player_open(info.url, 0);
+  ready = 1;
+  app_push(&player_screen);
+}
+
+void player_play_trailer(const char *type, const char *id) {
+  gen++;
+  ui_toast(tx("loadingTrailer"));
+  sbuf p = {0};
+  sb_add(&p, "/app/trailer?type=");
+  sb_add_url(&p, type);
+  sb_add(&p, "&id=");
+  sb_add_url(&p, id);
+  api_get(p.s, trailer_came, (void *)(intptr_t)gen);
+  sb_free(&p);
+}
+
 /* opens the player on a source of a search (seq), or with seq < 0 on the last one played */
 void player_start(const char *type, const char *id, const char *vid, int seq) {
   gen++;

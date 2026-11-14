@@ -41,5 +41,7 @@ void sources_open(const char *type, const char *id, const char *video, const cha
 void sources_open_next(const char *type, const char *id, const char *video);
 /* a source of the last search by its number, or with seq < 0 the one played last time */
 void player_start(const char *type, const char *id, const char *vid, int seq);
+/* the title's trailer, inside the app, where a free source has one */
+void player_play_trailer(const char *type, const char *id);
 
 #endif

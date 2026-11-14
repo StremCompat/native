@@ -301,6 +301,7 @@ static void run_action(const action *a) {
   const char *kind = a->kind ? a->kind : "";
   if (!strcmp(kind, "resume")) player_start(want_type, want_id, a->video ? a->video : want_id, -1);
   else if (!strcmp(kind, "similar")) similar_open(want_type, want_id);
+  else if (!strcmp(kind, "trailer")) player_play_trailer(want_type, want_id);
   else if (!strcmp(kind, "library")) toggle_library();
   else if (!strcmp(kind, "episode") || !strcmp(kind, "sources") || !strcmp(kind, "best"))
     sources_open(want_type, want_id, a->video ? a->video : want_id, name);
