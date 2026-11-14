@@ -142,6 +142,16 @@ void menu_draw(const menu *m, float x, float bottom) {
   }
 }
 
+void ui_qr(const char *modules, int size, float x, float y, float box) {
+  gfx_rect(x, y, box, box, 18, C_WHITE);
+  if (!modules || size <= 0) return;
+  /* the modules within the white square, with its own quiet margin */
+  float cell = (box - 24) / (float)(size + 4), ox = x + 12 + 2 * cell, oy = y + 12 + 2 * cell;
+  for (int r = 0; r < size; r++)
+    for (int c = 0; c < size; c++)
+      if (modules[r * size + c] == '1') gfx_rect(ox + c * cell, oy + r * cell, cell + 0.5f, cell + 0.5f, 0, SC_RGBA(0, 0, 0, 255));
+}
+
 /* ---------- toast ---------- */
 #define TOAST_MS 3500.0
 static char toast_text[256];

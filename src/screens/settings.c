@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "api.h"
+#include "keyboard.h"
 #include "nav.h"
 #include "net.h"
 #include "screens.h"
@@ -40,6 +41,51 @@ static group groups[MAX_GROUPS];
 static int ngroups, loaded, in_items, group_at, item_at, editing;
 static char email[160], plan[96], original[64];
 static float scroll;
+
+/* what an action opens over Settings: diagnostics, the support QR, the server address */
+enum { P_NONE, P_DIAG, P_SUPPORT, P_SERVER };
+#define QR_MAX 64
+static int panel, nlines, qr_size;
+static char lines[16][240], qr[QR_MAX * QR_MAX + 1], support_text[400], support_address[96], server_address[200];
+static keyboard kb;
+
+static void diag_came(const jval *answer, void *user) {
+  (void)user;
+  const jval *list = json_get(answer, "lines");
+  nlines = 0;
+  for (int i = 0; i < json_len(list) && nlines < 16; i++)
+    snprintf(lines[nlines++], sizeof lines[0], "%s", json_str(json_at(list, i), ""));
+  if (!nlines) snprintf(lines[nlines++], sizeof lines[0], "%s", tx("diagUnavailable"));
+}
+
+static void support_came(const jval *answer, void *user) {
+  (void)user;
+  const jval *rows = json_get(answer, "qr");
+  qr_size = json_len(rows) <= QR_MAX ? json_len(rows) : 0;
+  for (int y = 0; y < qr_size; y++) {
+    const char *row = json_str(json_at(rows, y), "");
+    for (int x = 0; x < qr_size; x++) qr[y * qr_size + x] = x < (int)strlen(row) ? row[x] : '0';
+  }
+  snprintf(support_text, sizeof support_text, "%s", json_str(json_get(answer, "text"), ""));
+  snprintf(support_address, sizeof support_address, "%s", json_str(json_get(answer, "address"), ""));
+}
+
+/* the streaming server's address shows as the value of its row */
+static void server_came(const jval *answer, void *user) {
+  (void)user;
+  snprintf(server_address, sizeof server_address, "%s", json_str(json_get(answer, "address"), ""));
+}
+
+static void server_saved(net_reply *r, void *user) {
+  (void)user;
+  jdoc *d = r->status == 200 && r->body ? json_parse(r->body, r->len) : NULL;
+  const jval *a = json_root(d);
+  if (json_bool(json_get(a, "ok"), 0))
+    snprintf(server_address, sizeof server_address, "%s", json_str(json_get(a, "address"), kb.text));
+  else
+    ui_toast(tx("serverInvalid"));
+  json_free(d);
+}
 
 static void read_model(const jval *answer) {
   const jval *gs = json_get(answer, "groups");
@@ -153,6 +199,22 @@ static void speed_came(const jval *answer, void *user) {
 
 static void run_action(const item *it) {
   if (!strcmp(it->k, "__profile")) return profiles_open(0);
+  if (!strcmp(it->k, "__diag")) {
+    panel = P_DIAG;
+    nlines = 0;
+    api_get("/app/diag", diag_came, NULL);
+    return;
+  }
+  if (!strcmp(it->k, "__support")) {
+    panel = P_SUPPORT;
+    api_get("/app/support", support_came, NULL);
+    return;
+  }
+  if (!strcmp(it->k, "__server")) {
+    panel = P_SERVER;
+    kb_reset(&kb, server_address, 0);
+    return;
+  }
   if (!strcmp(it->k, "__reload")) {
     api_load_strings();
     home_reload();
@@ -176,6 +238,23 @@ static void run_action(const item *it) {
 static void key(app_key k) {
   if (nav_has_focus()) {
     nav_key(k);
+    return;
+  }
+  if (panel == P_SERVER) {
+    if (k == K_BACK) panel = P_NONE;
+    else if (kb_key(&kb, k) == KB_DONE) {
+      panel = P_NONE;
+      sbuf b = {0};
+      sb_add(&b, "{\"address\":");
+      sb_add_json_str(&b, kb.text);
+      sb_add(&b, "}");
+      net_request("/serverconfig", b.s, NET_HIGH, NULL, server_saved, NULL);
+      sb_free(&b);
+    }
+    return;
+  }
+  if (panel) {
+    if (k == K_BACK || k == K_OK) panel = P_NONE;
     return;
   }
   item *it = current();
@@ -223,11 +302,33 @@ static void draw_item(const item *it, float y, int focused, int out) {
     gfx_rect(right - 66, y + 22, 66, 36, 18, it->on ? C_WHITE : C_TEXT(0.24f));
     gfx_rect(right - 66 + (it->on ? 34 : 4), y + 26, 28, 28, 14, it->on ? C_BG : C_WHITE);
   } else if (!it->action || !strcmp(it->k, "__server")) {
-    char shown[160];
-    snprintf(shown, sizeof shown, "%s  \xE2\x80\xBA", it->value);
+    char shown[260];
+    snprintf(shown, sizeof shown, "%s  \xE2\x80\xBA", !strcmp(it->k, "__server") ? server_address : it->value);
     float w = text_width(shown, 24, W_BOLD) + 34;
     gfx_rect(right - w, y + (ITEM_H - 46) / 2, w, 46, 18, edit ? C_BG : C_TEXT(0.08f));
     ui_line(shown, right - w + 17, y + (ITEM_H - 46) / 2, 46, 24, W_BOLD, edit ? C_WHITE : C_TEXT(0.88f));
+  }
+}
+
+static void draw_panel(void) {
+  if (!panel) return;
+  gfx_rect(0, 0, SC_DESIGN_W, SC_DESIGN_H, 0, SC_RGBA(0, 0, 0, 170));
+  float w = 1100, h = panel == P_SUPPORT ? 420 : panel == P_SERVER ? 520 : 70 + 40.0f * (nlines ? nlines : 1),
+        x = (SC_DESIGN_W - w) / 2, y = (SC_DESIGN_H - h) / 2;
+  gfx_rect(x, y, w, h, 18, SC_RGBA(20, 20, 22, 250));
+  if (panel == P_DIAG) {
+    if (!nlines) text_draw(tx("diagLoading"), x + 40, y + 35, 24, W_REGULAR, C_TEXT(0.8f));
+    for (int i = 0; i < nlines; i++) text_draw_fit(lines[i], x + 40, y + 35 + i * 40, w - 80, 24, W_REGULAR, C_TEXT(0.86f));
+  } else if (panel == P_SUPPORT) {
+    ui_qr(qr_size ? qr : NULL, qr_size, x + 40, y + 40, 340);
+    text_draw_wrap(support_text, x + 420, y + 60, w - 460, 26, W_REGULAR, C_TEXT(0.86f), 6, 36);
+    text_draw(support_address, x + 420, y + 320, 28, W_BOLD, C_WHITE);
+  } else {
+    float kw = 13 * 72 - 8, kx = (SC_DESIGN_W - kw) / 2;
+    text_draw(tx("serverAddress"), kx, y + 30, 24, W_BOLD, C_TEXT(0.7f));
+    gfx_rect(kx, y + 72, kw, 60, 10, C_TEXT(0.1f));
+    text_draw_fit(kb.text, kx + 18, y + 72 + (60 - text_line_height(26)) / 2, kw - 36, 26, W_REGULAR, C_WHITE);
+    kb_draw(&kb, kx, y + 160);
   }
 }
 
@@ -270,11 +371,14 @@ static void frame(double t, float dt) {
               !strcmp(gr->items[i].k, "__logout"));
   gfx_pop_clip();
   nav_draw(NAV_SETTINGS, dt);
+  draw_panel();
 }
 
 static void enter(void) {
   in_items = editing = 0;
+  panel = P_NONE;
   api_get("/app/settings", model_came, NULL);
+  api_get("/serverconfig", server_came, NULL);
 }
 
 const screen settings_screen = {enter, key, frame, NULL, 0};

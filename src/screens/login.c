@@ -160,15 +160,6 @@ static void text(const char *utf8) {
 }
 
 /* ---------- drawing ---------- */
-static void draw_qr(float x, float y) {
-  gfx_rect(x, y, 300, 300, 18, C_WHITE);
-  if (!qr_size) return;
-  /* the modules within the white square, with its own quiet margin */
-  float cell = (300 - 24) / (float)(qr_size + 4), ox = x + 12 + 2 * cell, oy = y + 12 + 2 * cell;
-  for (int r = 0; r < qr_size; r++)
-    for (int c = 0; c < qr_size; c++)
-      if (qr_rows[r * qr_size + c] == '1') gfx_rect(ox + c * cell, oy + r * cell, cell + 0.5f, cell + 0.5f, 0, SC_RGBA(0, 0, 0, 255));
-}
 
 static float centred(const char *s, float cx, float y, float size, int weight, uint32_t color) {
   float w = text_width(s, size, weight);
@@ -196,7 +187,7 @@ static void frame(double t, float dt) {
   float cx = left + qr_w / 2, top = 230;
   centred(tx("phoneSignIn"), cx, top, 40, W_BOLD, C_WHITE);
   centred(tx("scanCode"), cx, top + 60, 24, W_REGULAR, C_TEXT(0.72f));
-  draw_qr(cx - 150, top + 116);
+  ui_qr(qr_rows, qr_size, cx - 150, top + 116, 300);
   if (code[0]) centred(code, cx, top + 436, 46, W_EXTRABOLD, C_WHITE);
   centred(tx(status_key), cx, top + 512, 22, W_REGULAR, C_TEXT(0.72f));
   gfx_rect(left + qr_w + gap, top - 10, 1, 560, 0, C_TEXT(0.14f));

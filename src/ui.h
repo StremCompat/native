@@ -70,6 +70,9 @@ float menu_height(const menu *m);
    the right edge, keeping one card after it in sight (web: slideRow) */
 float ui_row_offset(int focused, float step, float width);
 
+/* a QR code in a white square of side box: modules holds size x size of '1' (dark) and '0' */
+void ui_qr(const char *modules, int size, float x, float y, float box);
+
 /* a short message at the top of the screen for a few seconds (any screen) */
 void ui_toast(const char *text);
 void ui_draw_toast(double t);
