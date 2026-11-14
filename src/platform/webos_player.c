@@ -9,19 +9,17 @@
 
 #include <SDL.h>
 #include <dlfcn.h>
-#include <glib.h>
-#include <luna-service2/lunaservice.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "json.h"
 #include "util.h"
+#include "webos_luna.h"
 
 #define APP_ID "io.github.alexesmm.legacytv"
 #define MEDIA "luna://com.webos.media/"
 
-static LSHandle *bus;
 static char media_id[128], window_id[128], error[256];
 static player_state status = PLAYER_IDLE;
 static int buffering, ntracks, audio_at;
@@ -30,41 +28,12 @@ static player_track tracks[PLAYER_MAX_TRACKS];
 static LSMessageToken subscription;
 
 /* ---------- the bus ---------- */
-static int bus_ready(void) {
-  if (bus) return 1;
-  LSError err;
-  LSErrorInit(&err);
-  /* the app's own name first; an unnamed handle on systems that refuse it */
-  if (!LSRegister(APP_ID, &bus, &err)) {
-    LSErrorFree(&err);
-    LSErrorInit(&err);
-    if (!LSRegister(NULL, &bus, &err)) {
-      snprintf(error, sizeof error, "Luna: %s", err.message ? err.message : "no bus");
-      LSErrorFree(&err);
-      bus = NULL;
-      return 0;
-    }
-  }
-  if (!LSGmainContextAttach(bus, g_main_context_default(), &err)) {
-    snprintf(error, sizeof error, "Luna: %s", err.message ? err.message : "no main loop");
-    LSErrorFree(&err);
-    return 0;
-  }
-  return 1;
-}
-
 static int call(const char *method, const char *payload, LSFilterFunc reply, LSMessageToken *token) {
   char uri[128];
-  LSError err;
-  LSErrorInit(&err);
   snprintf(uri, sizeof uri, MEDIA "%s", method);
-  int ok = reply ? LSCall(bus, uri, payload, reply, NULL, token, &err)
-                 : LSCallOneReply(bus, uri, payload, NULL, NULL, NULL, &err);
-  if (!ok) {
-    snprintf(error, sizeof error, "%s: %s", method, err.message ? err.message : "refused");
-    LSErrorFree(&err);
-  }
-  return ok;
+  if (luna_call(uri, payload, reply, token)) return 1;
+  snprintf(error, sizeof error, "%s", luna_error());
+  return 0;
 }
 
 /* a call that names the media and nothing else: play, pause, unload */
@@ -171,7 +140,8 @@ static void choose_window(void) {
 int player_open(const char *url, double start_ms) {
   player_close();
   error[0] = 0;
-  if (!bus_ready()) {
+  if (!luna_ready()) {
+    snprintf(error, sizeof error, "%s", luna_error());
     status = PLAYER_FAILED;
     return -1;
   }
@@ -198,9 +168,7 @@ int player_open(const char *url, double start_ms) {
 void player_close(void) {
   if (media_id[0]) {
     simple("unload");
-    LSError err;
-    LSErrorInit(&err);
-    if (subscription && !LSCallCancel(bus, subscription, &err)) LSErrorFree(&err);
+    luna_cancel(subscription);
   }
   media_id[0] = 0;
   subscription = 0;
@@ -225,10 +193,7 @@ void player_seek(double ms) {
   position = ms;
 }
 
-void player_poll(void) {
-  while (g_main_context_iteration(NULL, FALSE)) {
-  }
-}
+void player_poll(void) { luna_poll(); }
 
 player_state player_status(void) { return status; }
 int player_buffering(void) { return buffering; }

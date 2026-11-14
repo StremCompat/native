@@ -92,6 +92,7 @@ int app_wants_quit(void) { return quit; }
    answer may take a moment: it is waited for up to 30 seconds. */
 int app_start(void) {
   if (ui_init()) return -1;
+  platform_start_server();
   for (int i = 0; i < 120 && api_load_strings(); i++) SDL_Delay(250);
   /* signed in: Home, or for a Nuvio account who is watching first; otherwise signing in */
   net_reply r;

@@ -9,6 +9,9 @@
 
 void platform_init(void) {}
 
+/* on the computer the server is started by hand (tools/dev-server.js) */
+void platform_start_server(void) {}
+
 /* the keyboard stands in for the remote: Escape and Backspace are Back, F1 to F4 the colours */
 app_key platform_key(const SDL_Event *ev) {
   if (ev->type != SDL_KEYDOWN) return K_NONE;

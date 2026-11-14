@@ -13,6 +13,9 @@ void platform_init(void);
    app reads the same way everywhere */
 app_key platform_key(const SDL_Event *ev);
 
+/* starts the app's own local server where the system runs it as a service (webOS) */
+void platform_start_server(void);
+
 /* offers the system's fonts to the text module, best candidates for CJK first */
 void platform_add_fonts(void);
 

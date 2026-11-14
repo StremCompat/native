@@ -8,6 +8,7 @@
 #include <strings.h>
 
 #include "text.h"
+#include "webos_luna.h"
 
 void platform_init(void) {
   /* Back comes to the app instead of closing it; the app decides when Back means leave */
@@ -26,6 +27,12 @@ app_key platform_key(const SDL_Event *ev) {
   case SDL_WEBOS_SCANCODE_BLUE: return K_BLUE;
   default: return K_NONE;
   }
+}
+
+/* the service starts the local server (service/launch.js); the call is what wakes it */
+void platform_start_server(void) {
+  luna_call("luna://io.github.alexesmm.legacytv.server/start", "{}", NULL, NULL);
+  luna_poll();
 }
 
 /* every font file under the folder; the text module opens one only when a character needs it */
