@@ -9,6 +9,11 @@
 
 void platform_init(void) {}
 
+void platform_poll(void) {}
+
+/* on the computer there is nothing to install into */
+void platform_install_update(void (*done)(const char *error)) { done(NULL); }
+
 /* on the computer the server is started by hand (tools/dev-server.js) */
 void platform_start_server(void) {}
 

@@ -13,8 +13,14 @@ void platform_init(void);
    app reads the same way everywhere */
 app_key platform_key(const SDL_Event *ev);
 
+/* once per frame: the system's news (webOS bus answers) */
+void platform_poll(void);
+
 /* starts the app's own local server where the system runs it as a service (webOS) */
 void platform_start_server(void);
+
+/* hands the downloaded update to the system installer; done(error) with "" when it was taken */
+void platform_install_update(void (*done)(const char *error));
 
 /* offers the system's fonts to the text module, best candidates for CJK first */
 void platform_add_fonts(void);

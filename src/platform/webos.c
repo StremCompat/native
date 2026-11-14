@@ -7,6 +7,7 @@
 #include <string.h>
 #include <strings.h>
 
+#include "json.h"
 #include "text.h"
 #include "webos_luna.h"
 
@@ -29,10 +30,32 @@ app_key platform_key(const SDL_Event *ev) {
   }
 }
 
+void platform_poll(void) { luna_poll(); }
+
 /* the service starts the local server (service/launch.js); the call is what wakes it */
 void platform_start_server(void) {
   luna_call("luna://io.github.alexesmm.legacytv.server/start", "{}", NULL, NULL);
   luna_poll();
+}
+
+/* the service hands the downloaded package to the system installer (service/launch.js) */
+static void (*install_done)(const char *error);
+
+static bool install_answered(LSHandle *sh, LSMessage *msg, void *ctx) {
+  (void)sh;
+  (void)ctx;
+  const char *text = LSMessageGetPayload(msg);
+  jdoc *d = text ? json_parse(text, strlen(text)) : NULL;
+  int ok = json_bool(json_get(json_root(d), "returnValue"), 0);
+  if (install_done) install_done(ok ? "" : json_str(json_get(json_root(d), "error"), "refused"));
+  json_free(d);
+  return true;
+}
+
+void platform_install_update(void (*done)(const char *error)) {
+  LSMessageToken token;
+  install_done = done;
+  if (!luna_call("luna://io.github.alexesmm.legacytv.server/install", "{}", install_answered, &token)) done(luna_error());
 }
 
 /* every font file under the folder; the text module opens one only when a character needs it */

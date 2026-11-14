@@ -32,6 +32,12 @@ void home_reload(void);
 /* who is watching; at the start a single profile is used without asking */
 void profiles_open(int starting);
 
+/* the update to the newer version: downloaded by the server, installed by the system */
+void update_check(void);
+void update_start(void);
+/* once per frame: how the download goes */
+void update_poll(void);
+
 /* screens opened on something */
 void card_menu_open(const card *c, int continue_watching);
 void similar_open(const char *type, const char *id);

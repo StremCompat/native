@@ -1,5 +1,7 @@
 #include "nav.h"
 
+#include <stdio.h>
+
 #include "api.h"
 #include "screens.h"
 #include "gfx.h"
@@ -21,10 +23,16 @@ static const struct {
 } items[NAV_COUNT] = {
     {ICON_SEARCH, "navSearch"},     {ICON_HOME, "navHome"},         {ICON_DISCOVER, "navDiscover"},
     {ICON_LIBRARY, "navLibrary"},   {ICON_CALENDAR, "navCalendar"}, {ICON_CHANNELS, "navChannels"},
-    {ICON_ADDONS, "navAddons"},     {ICON_SETTINGS, "navSettings"}, {ICON_LEAVE, "exitLeave"},
+    {ICON_ADDONS, "navAddons"},     {ICON_SETTINGS, "navSettings"}, {ICON_UPDATE, "updateNav"},
+    {ICON_LEAVE, "exitLeave"},
 };
 
 static int focused = -1; /* the chip with the focus, or -1 while the screen has it */
+static char update_version[32];
+
+void nav_offer_update(const char *version) { snprintf(update_version, sizeof update_version, "%s", version); }
+
+static int present(int i) { return i != NAV_UPDATE || update_version[0]; }
 static float open;      /* 0..1: the panel and the names fading in */
 
 void nav_focus(nav_item current) { focused = (int)current; }
@@ -32,8 +40,8 @@ void nav_focus(nav_item current) { focused = (int)current; }
 int nav_has_focus(void) { return focused >= 0; }
 
 int nav_key(app_key k) {
-  if (k == K_UP && focused > 0) focused--;
-  else if (k == K_DOWN && focused < NAV_COUNT - 1) focused++;
+  if (k == K_UP && focused > 0) focused -= present(focused - 1) ? 1 : 2;
+  else if (k == K_DOWN && focused < NAV_COUNT - 1) focused += present(focused + 1) ? 1 : 2;
   else if (k == K_RIGHT || k == K_BACK) focused = -1;
   else if (k == K_OK) {
     int chosen = focused;
@@ -48,6 +56,7 @@ int nav_key(app_key k) {
     else if (chosen == NAV_ADDONS) app_show(&addons_screen);
     else if (chosen == NAV_CALENDAR) app_show(&calendar_screen);
     else if (chosen == NAV_CHANNELS) app_show(&channels_screen);
+    else if (chosen == NAV_UPDATE) update_start();
     return chosen;
   }
   return -1;
@@ -55,7 +64,8 @@ int nav_key(app_key k) {
 
 static float chip_y(int i) {
   if (i == NAV_LEAVE) return SC_DESIGN_H - 34 - CHIP_H;
-  return (SC_DESIGN_H - (NAV_LEAVE * CHIP_STEP)) / 2 + 4 + i * CHIP_STEP;
+  if (i == NAV_UPDATE) return SC_DESIGN_H - 98 - CHIP_H;
+  return (SC_DESIGN_H - (NAV_UPDATE * CHIP_STEP)) / 2 + 4 + i * CHIP_STEP;
 }
 
 void nav_draw(nav_item current, float dt) {
@@ -72,6 +82,7 @@ void nav_draw(nav_item current, float dt) {
   /* the profile at the top */
   gfx_outline(38, 38, 52, 52, 26, 3, C_TEXT(0.18f));
   for (int i = 0; i < NAV_COUNT; i++) {
+    if (!present(i)) continue;
     float y = chip_y(i);
     int is_focus = i == focused, is_current = i == (int)current;
     uint32_t chip = 0, icon = C_TEXT(0.6f);

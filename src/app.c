@@ -121,6 +121,7 @@ int app_start(void) {
   if (!json_bool(json_get(st, "signedIn"), 0)) app_show(&login_screen);
   else if (!strcmp(json_str(json_get(st, "provider"), ""), "nuvio")) profiles_open(1);
   else app_show(&home_screen);
+  update_check();
   json_free(d);
   free(r.body);
   return 0;
@@ -134,6 +135,8 @@ void app_frame(int w, int h, double t) {
     on_key(K_MENU);
   }
   gfx_begin(w, h, C_BG);
+  platform_poll();
+  update_poll();
   if (depth > 1 && stack[depth - 1]->overlay) stack[depth - 2]->frame(t, dt);
   if (depth) stack[depth - 1]->frame(t, dt);
   ui_draw_toast(t);
