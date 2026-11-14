@@ -2,6 +2,7 @@
 # Builds StremCompat with Zig as the C compiler, for one target:
 #   ./build.sh win      Windows x64, for development and the screenshot tests
 #   ./build.sh webos    LG webOS (ARM)
+#   ./build.sh android  the assets the Android TV app packs (the code is built by its Gradle project)
 #   ./build.sh test     the unit tests (Windows)
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -36,6 +37,14 @@ case "$TARGET" in
     rm -rf "$OUT/assets"
     cp -r "$HERE/assets" "$OUT/assets"
     echo "built $OUT/stremcompat"
+    ;;
+  android)
+    # public-repo/android builds the code with CMake (app/src/main/cpp); this stages the assets
+    OUT="$HERE/build/android"
+    rm -rf "$OUT"
+    mkdir -p "$OUT"
+    cp -r "$HERE/assets" "$OUT/assets"
+    echo "staged $OUT/assets"
     ;;
   test)
     # unit tests, built for Windows like the app; run them from Windows

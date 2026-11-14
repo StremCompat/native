@@ -1,3 +1,4 @@
 build/
 third_party/SDL2-*/
 third_party/SDL2-src.tar.gz
+third_party/sdl-src/
