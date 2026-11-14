@@ -19,7 +19,7 @@ typedef struct {
 
 extern const screen home_screen, title_screen, sources_screen, player_screen, login_screen, profiles_screen, search_screen,
     library_screen, discover_screen, settings_screen, addons_screen,
-    card_menu_screen, similar_screen, calendar_screen, channels_screen, boot_screen;
+    card_menu_screen, similar_screen, calendar_screen, channels_screen, boot_screen, rows_screen;
 
 /* the first screen, with nothing to go back to */
 void app_show(const screen *s);

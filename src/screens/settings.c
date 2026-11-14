@@ -215,6 +215,8 @@ static void run_action(const item *it) {
     kb_reset(&kb, server_address, 0);
     return;
   }
+  if (!strcmp(it->k, "__rows")) return app_push(&rows_screen);
+  if (!strcmp(it->k, "__m3u")) return app_show(&channels_screen);
   if (!strcmp(it->k, "__reload")) {
     api_load_strings();
     home_reload();

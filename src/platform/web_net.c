@@ -14,6 +14,7 @@ typedef struct job {
   net_work_fn work;
   net_done_fn done;
   void *user;
+  int sync; /* net_fetch's own, read where it waits */
   net_reply reply;
 } job;
 
@@ -44,7 +45,7 @@ EMSCRIPTEN_KEEPALIVE void web_net_answer(job *j, int status, char *body, int len
   j->reply.status = status;
   j->reply.body = body;
   j->reply.len = (size_t)len;
-  if (!j->done) return; /* net_fetch's own reply, read where it waits */
+  if (j->sync) return;
   j->next = NULL;
   *finished_tail = j;
   finished_tail = &j->next;
@@ -69,7 +70,7 @@ void net_request(const char *path, const char *body, int priority, net_work_fn w
 }
 
 void net_fetch(const char *path, const char *body, net_reply *r) {
-  job j = {0};
+  job j = {.sync = 1};
   js_request(port, path, body, 1, &j);
   *r = j.reply;
   r->result = NULL;
@@ -83,7 +84,7 @@ void net_poll(void) {
     job *j = list;
     list = j->next;
     if (j->work) j->work(&j->reply, j->user);
-    j->done(&j->reply, j->user);
+    if (j->done) j->done(&j->reply, j->user);
     pending--;
     free(j->reply.body);
     free(j);
