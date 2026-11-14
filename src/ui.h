@@ -47,6 +47,24 @@ void backdrop_set(backdrop *b, const char *url);
 /* from x to the right edge, h tall, keeping the picture's top */
 void backdrop_draw(backdrop *b, float x, float h, float opacity, float dt);
 
+/* A list to choose from, as the web player's menus (#menu): a heading, then rows; the one
+   in use is marked. Used by the player, the sources' language filter and the card menus. */
+#define MENU_MAX 80
+typedef struct {
+  char title[96];
+  struct {
+    char label[160];
+    int on, id;
+  } items[MENU_MAX];
+  int n, at, open;
+} menu;
+void menu_begin(menu *m, const char *title);
+void menu_add(menu *m, const char *label, int on, int id);
+/* Up and Down move; OK returns the chosen row's id; Back closes (-2); otherwise -1 */
+int menu_key(menu *m, int key);
+/* x is its left edge, bottom where it ends */
+void menu_draw(const menu *m, float x, float bottom);
+
 /* a title as a row shows it (the server decides its pictures and its lines) */
 typedef struct {
   char *id, *type, *name, *art, *backdrop, *subtitle, *video_id;

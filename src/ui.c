@@ -82,6 +82,60 @@ void backdrop_draw(backdrop *b, float x, float h, float opacity, float dt) {
   if (now) gfx_image(now, x, 0, SC_DESIGN_W - x, h, 0, opacity * (before ? b->mix : 1), COVER_TOP);
 }
 
+void menu_begin(menu *m, const char *title) {
+  snprintf(m->title, sizeof m->title, "%s", title ? title : "");
+  m->n = m->at = 0;
+  m->open = 1;
+}
+
+void menu_add(menu *m, const char *label, int on, int id) {
+  if (m->n >= MENU_MAX) return;
+  snprintf(m->items[m->n].label, sizeof m->items[m->n].label, "%s", label);
+  m->items[m->n].on = on;
+  m->items[m->n].id = id;
+  if (on) m->at = m->n;
+  m->n++;
+}
+
+int menu_key(menu *m, int key) {
+  if (key == K_UP && m->at > 0) m->at--;
+  else if (key == K_DOWN && m->at < m->n - 1) m->at++;
+  else if (key == K_OK && m->n) return m->items[m->at].id;
+  else if (key == K_BACK) {
+    m->open = 0;
+    return -2;
+  }
+  return -1;
+}
+
+#define MENU_ROW 62.0f
+#define MENU_SHOWN 10
+
+void menu_draw(const menu *m, float x, float bottom) {
+  if (!m->open) return;
+  float w = 360;
+  for (int i = 0; i < m->n; i++) {
+    float lw = text_width(m->items[i].label, 25, W_BOLD) + 44;
+    if (lw > w) w = lw;
+  }
+  if (w > 820) w = 820;
+  int first = m->at >= MENU_SHOWN ? m->at - MENU_SHOWN + 1 : 0, shown = m->n - first < MENU_SHOWN ? m->n - first : MENU_SHOWN;
+  float head = m->title[0] ? 50 : 0, h = 24 + head + shown * MENU_ROW, y = bottom - h;
+  gfx_rect(x, y, w + 24, h, 14, SC_RGBA(20, 20, 22, 247));
+  if (head) {
+    char up[128];
+    utf8_upper(up, sizeof up, m->title);
+    ui_line(up, x + 34, y + 12, head, 19, W_REGULAR, C_TEXT(0.75f));
+  }
+  for (int i = 0; i < shown; i++) {
+    int at = first + i, f = at == m->at;
+    float ry = y + 12 + head + i * MENU_ROW;
+    if (f) gfx_rect(x + 12, ry, w, MENU_ROW, 8, C_WHITE);
+    text_draw_fit(m->items[at].label, x + 34, ry + (MENU_ROW - text_line_height(25)) / 2, w - 44, 25,
+                  m->items[at].on ? W_BOLD : W_REGULAR, f ? C_BG : C_WHITE);
+  }
+}
+
 /* ---------- cards ---------- */
 static char *dup_or_null(const char *s) { return s && *s ? str_dup(s) : NULL; }
 

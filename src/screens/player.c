@@ -12,6 +12,7 @@
 #include "img.h"
 #include "player.h"
 #include "screens.h"
+#include "subs.h"
 #include "text.h"
 #include "ui.h"
 #include "util.h"
@@ -33,6 +34,12 @@ typedef struct {
 
 static play_info info;
 static int gen, ready, mode, button = B_PLAY, seek_step = 10, resuming;
+
+/* the menu over the buttons: what it lists, and the episodes and sources it got for that */
+enum { VIEW_MEDIA, VIEW_AUDIO, VIEW_SUBS, VIEW_EPISODES, VIEW_SOURCES, VIEW_SETTINGS };
+static menu list;
+static int view, list_left;
+static char *episode_ids[MENU_MAX];
 static char *want_type, *want_id, *want_vid; /* what was asked, to fall back on the sources */
 static double clock_now, bar_until, seek_target = -1, seek_base = -1, seek_at, last_report, toast_until;
 static char toast[256];
@@ -134,6 +141,8 @@ static void started(const jval *answer, void *user) {
     info.season_line = se.s;
   }
   seek_step = (int)json_num(json_get(answer, "seekStep"), 10);
+  subs_reset(info.type, info.id, info.vid, json_str(json_get(answer, "ref"), ""), info.url,
+             json_str(json_get(answer, "subtitleLanguage"), ""));
   double resume = json_num(json_get(answer, "resume"), 0);
   player_open(info.url, resume);
   if (resume > 0) {
@@ -178,6 +187,7 @@ void player_start(const char *type, const char *id, const char *vid, int seq) {
 }
 
 static void leave(void) {
+  list.open = 0;
   report("leave");
   player_close();
   gen++;
@@ -225,19 +235,183 @@ static void move_button(int dir) {
     }
 }
 
+/* ---------- menus ---------- */
+/* rows that are not a choice: the "off" of the subtitles, and the wait while a list comes */
+#define ROW_WAIT -100
+#define ROW_OFF -101
+
+/* a track's language by name, as the media service gives only its code */
+static const char *language_name(const char *code) {
+  static const char *names[][2] = {{"en", "English"}, {"pt", "Português"},  {"es", "Español"}, {"fr", "Français"},
+                                   {"de", "Deutsch"}, {"it", "Italiano"},   {"ja", "日本語"},  {"ko", "한국어"},
+                                   {"zh", "中文"},    {"ru", "Русский"},    {"hi", "हिन्दी"},   {"nl", "Nederlands"},
+                                   {"pl", "Polski"},  {"tr", "Türkçe"},     {"sv", "Svenska"}, {"ar", "العربية"}};
+  static const char *three[][2] = {{"eng", "en"}, {"por", "pt"}, {"spa", "es"}, {"fre", "fr"}, {"fra", "fr"},
+                                   {"ger", "de"}, {"deu", "de"}, {"ita", "it"}, {"jpn", "ja"}, {"kor", "ko"},
+                                   {"chi", "zh"}, {"zho", "zh"}, {"rus", "ru"}, {"hin", "hi"}, {"dut", "nl"},
+                                   {"nld", "nl"}, {"pol", "pl"}, {"tur", "tr"}, {"swe", "sv"}, {"ara", "ar"}};
+  char two[3] = {0};
+  for (size_t i = 0; i < sizeof three / sizeof three[0]; i++)
+    if (!strcmp(code, three[i][0])) code = three[i][1];
+  memcpy(two, code, strlen(code) < 2 ? strlen(code) : 2);
+  for (size_t i = 0; i < sizeof names / sizeof names[0]; i++)
+    if (!strcmp(two, names[i][0]) && strlen(code) <= 3) return names[i][1];
+  return code;
+}
+
+static const char *audio_name(void) {
+  static player_track t[PLAYER_MAX_TRACKS];
+  int n = player_audio_tracks(t, PLAYER_MAX_TRACKS), at = player_audio_current();
+  return at < n && t[at].language[0] ? language_name(t[at].language) : txp("defaultAudio", NULL);
+}
+
+static void open_view(int which) {
+  view = which;
+  if (which == VIEW_MEDIA) {
+    char row[200];
+    menu_begin(&list, txp("audioSubs", NULL));
+    snprintf(row, sizeof row, "%s: %s \xE2\x80\xBA", txp("audio", NULL), audio_name());
+    menu_add(&list, row, 0, VIEW_AUDIO);
+    const sub_choice *s = subs_at(subs_current());
+    snprintf(row, sizeof row, "%s: %s \xE2\x80\xBA", txp("subtitles", NULL), s ? s->name : txp("off", NULL));
+    menu_add(&list, row, 0, VIEW_SUBS);
+  } else if (which == VIEW_AUDIO) {
+    player_track t[PLAYER_MAX_TRACKS];
+    int n = player_audio_tracks(t, PLAYER_MAX_TRACKS);
+    menu_begin(&list, txp("audio", NULL));
+    for (int i = 0; i < n; i++) {
+      char row[640];
+      snprintf(row, sizeof row, "%.200s%s%.60s", t[i].language[0] ? language_name(t[i].language) : txp("defaultAudio", NULL),
+               t[i].name[0] ? "  \xC2\xB7  " : "", t[i].name);
+      menu_add(&list, row, i == player_audio_current(), i);
+    }
+    if (!n) menu_add(&list, txp("defaultAudio", NULL), 1, 0);
+  } else if (which == VIEW_SUBS) {
+    menu_begin(&list, txp("subtitles", NULL));
+    menu_add(&list, txp("off", NULL), subs_current() < 0, ROW_OFF);
+    for (int i = 0; i < subs_count(); i++) menu_add(&list, subs_at(i)->name, i == subs_current(), i);
+  }
+  list.open = 1;
+}
+
+/* the episodes of this season, from the title page */
+static void episodes_came(const jval *answer, void *user) {
+  if ((intptr_t)user != gen || !list.open || view != VIEW_EPISODES) return;
+  const jval *seasons = json_get(json_get(json_get(answer, "title"), "series"), "seasons");
+  menu_begin(&list, txp("episodes", NULL));
+  for (int i = 0; i < MENU_MAX; i++) free(episode_ids[i]), episode_ids[i] = NULL;
+  for (int s = 0; s < json_len(seasons); s++) {
+    const jval *eps = json_get(json_at(seasons, s), "episodes");
+    int here = 0;
+    for (int e = 0; e < json_len(eps); e++)
+      if (info.vid && !strcmp(json_str(json_get(json_at(eps, e), "id"), ""), info.vid)) here = 1;
+    for (int e = 0; here && e < json_len(eps) && list.n < MENU_MAX; e++) {
+      const char *eid = json_str(json_get(json_at(eps, e), "id"), "");
+      episode_ids[list.n] = str_dup(eid);
+      menu_add(&list, json_str(json_get(json_at(eps, e), "title"), ""), info.vid && !strcmp(eid, info.vid), list.n);
+    }
+  }
+}
+
+/* the sources of this video, as the sources panel lists them */
+static int source_seqs[MENU_MAX];
+static void sources_came(const jval *answer, void *user) {
+  if ((intptr_t)user != gen || !list.open || view != VIEW_SOURCES) return;
+  const jval *items = json_get(answer, "items");
+  menu_begin(&list, tx("sources"));
+  for (int i = 0; i < json_len(items) && i < MENU_MAX; i++) {
+    const jval *it = json_at(items, i);
+    char row[200];
+    snprintf(row, sizeof row, "%s  \xC2\xB7  %s", json_str(json_get(it, "heading"), ""), json_str(json_get(it, "text"), ""));
+    source_seqs[i] = (int)json_num(json_get(it, "seq"), 0);
+    menu_add(&list, row, 0, i);
+  }
+}
+
+static void ask_list(int which, const char *path, api_done done) {
+  view = which;
+  menu_begin(&list, which == VIEW_EPISODES ? txp("episodes", NULL) : tx("sources"));
+  menu_add(&list, txp("readingTracks", NULL), 0, ROW_WAIT);
+  sbuf p = {0};
+  sb_add(&p, path);
+  sb_add(&p, "type=");
+  sb_add_url(&p, info.type);
+  if (which == VIEW_EPISODES) {
+    sb_add(&p, "&id=");
+    sb_add_url(&p, info.id);
+  } else {
+    sb_add(&p, "&vid=");
+    sb_add_url(&p, info.vid ? info.vid : info.id);
+  }
+  api_get(p.s, done, (void *)(intptr_t)gen);
+  sb_free(&p);
+}
+
+static void choose(int id) {
+  if (id == ROW_WAIT || id == ROW_OFF) {
+    if (id == ROW_OFF) subs_choose(-1);
+    list.open = 0;
+    return;
+  }
+  if (view == VIEW_MEDIA) {
+    open_view(id);
+    return;
+  }
+  if (view == VIEW_AUDIO) player_select_audio(id);
+  else if (view == VIEW_SUBS) subs_choose(id);
+  else if (view == VIEW_EPISODES && episode_ids[id] && strcmp(episode_ids[id], info.vid ? info.vid : "")) {
+    char *type = str_dup(info.type), *title = str_dup(info.id), *episode = str_dup(episode_ids[id]);
+    leave();
+    sources_open(type, title, episode, NULL);
+    free(type), free(title), free(episode);
+    return;
+  } else if (view == VIEW_SOURCES) {
+    char *type = str_dup(info.type), *title = str_dup(info.id), *video = str_dup(info.vid ? info.vid : info.id);
+    report("leave");
+    player_close();
+    app_back();
+    player_start(type, title, video, source_seqs[id]);
+    free(type), free(title), free(video);
+    return;
+  }
+  list.open = 0;
+}
+
 static void press_button(void) {
   if (button == B_PLAY) toggle();
   else if (button == B_REWIND) seek_by(-seek_step);
   else if (button == B_FORWARD) seek_by(seek_step);
+  else if (button == B_MEDIA) list_left = 1, open_view(VIEW_MEDIA);
+  else if (button == B_EPISODES) list_left = 1, ask_list(VIEW_EPISODES, "/app/title?", episodes_came);
+  else if (button == B_SOURCES) list_left = 1, ask_list(VIEW_SOURCES, "/app/streams?", sources_came);
+  else if (button == B_NEXT && info.next) {
+    char *type = str_dup(info.type), *title = str_dup(info.id), *episode = str_dup(info.next);
+    report("next");
+    player_close();
+    gen++;
+    app_back();
+    sources_open(type, title, episode, NULL);
+    free(type), free(title), free(episode);
+  }
 }
 
 static void key(app_key k) {
   bar_until = clock_now + BAR_SHOW_MS;
-  if (k == K_BACK) {
+  if (k == K_BACK && !list.open) {
     leave();
     return;
   }
   if (player_status() == PLAYER_FAILED) return;
+  if (list.open) {
+    int id = menu_key(&list, k);
+    if (id != -1 && id != -2) choose(id);
+    return;
+  }
+  /* the colour buttons of the remote: red subtitles, green audio, yellow skips an intro */
+  if (k == K_RED) list_left = 0, open_view(VIEW_SUBS);
+  else if (k == K_GREEN) list_left = 0, open_view(VIEW_AUDIO);
+  else if (k == K_YELLOW) seek_by(85);
+  if (k == K_RED || k == K_GREEN || k == K_YELLOW) return;
   if (k == K_PLAY) {
     toggle();
     return;
@@ -300,9 +474,10 @@ static void draw_button(int b, float x, float y, float size) {
   static const char *labels[B_COUNT] = {"audioSubs", "episodes", "sources", NULL, NULL, NULL, NULL, "settings"};
   if (focused && labels[b]) {
     const char *label = b == B_SOURCES ? tx("sources") : b == B_SETTINGS ? tx("navSettings") : txp(labels[b], NULL);
-    float lw = text_width(label, 22, W_BOLD) + 28;
-    gfx_rect(x + size / 2 - lw / 2, y - 14 - 40, lw, 40, 8, SC_RGBA(0, 0, 0, 191));
-    ui_line(label, x + size / 2 - lw / 2 + 14, y - 14 - 40, 40, 22, W_BOLD, C_WHITE);
+    float lw = text_width(label, 22, W_BOLD) + 28, lx = x + size / 2 - lw / 2;
+    if (lx < 16) lx = 16;
+    gfx_rect(lx, y - 14 - 40, lw, 40, 8, SC_RGBA(0, 0, 0, 191));
+    ui_line(label, lx + 14, y - 14 - 40, 40, 22, W_BOLD, C_WHITE);
   }
 }
 
@@ -371,6 +546,28 @@ static void draw_seek_amount(void) {
   text_draw(text, (SC_DESIGN_W - w) / 2, SC_DESIGN_H * 0.32f - 35, 60, W_EXTRABOLD, C_WHITE);
 }
 
+/* the line of the subtitle (#sub): centred, near the bottom, white with a shadow */
+static void draw_subtitle(void) {
+  const char *text = subs_text(player_position());
+  if (!text) return;
+  char lines[8][512];
+  int n = 0;
+  for (const char *p = text; *p && n < 8;) {
+    const char *end = strchr(p, '\n');
+    size_t len = end ? (size_t)(end - p) : strlen(p);
+    if (len >= sizeof lines[0]) len = sizeof lines[0] - 1;
+    memcpy(lines[n], p, len);
+    lines[n++][len] = 0;
+    p += len + (end ? 1 : 0);
+  }
+  float lh = 38 * 1.35f, y = SC_DESIGN_H * 0.92f - n * lh, max_w = SC_DESIGN_W * 0.88f;
+  for (int i = 0; i < n; i++, y += lh) {
+    float w = text_width(lines[i], 38, W_REGULAR), x = w < max_w ? (SC_DESIGN_W - w) / 2 : SC_DESIGN_W * 0.06f;
+    text_draw_fit(lines[i], x + 2, y + 3, max_w, 38, W_REGULAR, SC_RGBA(0, 0, 0, 200));
+    text_draw_fit(lines[i], x, y, max_w, 38, W_REGULAR, C_WHITE);
+  }
+}
+
 static void draw_toast(void) {
   if (clock_now >= toast_until || !toast[0]) return;
   float w = text_width(toast, 24, W_SEMIBOLD) + 52, y = SC_DESIGN_H * 0.08f;
@@ -408,8 +605,11 @@ static void frame(double t, float dt) {
     draw_cover(1);
   } else {
     if (player_buffering()) gfx_rect(0, 0, SC_DESIGN_W, SC_DESIGN_H, 0, SC_RGBA(10, 10, 11, 128));
-    if (t < bar_until || st == PLAYER_PAUSED || seek_target >= 0) draw_bar();
+    subs_tick(player_position());
+    draw_subtitle();
+    if (t < bar_until || st == PLAYER_PAUSED || seek_target >= 0 || list.open) draw_bar();
     draw_seek_amount();
+    menu_draw(&list, list_left ? 52 : SC_DESIGN_W - 52 - 384, SC_DESIGN_H - 190);
   }
   draw_toast();
 }
