@@ -10,7 +10,12 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 ZIG="${ZIG:-$HOME/stremcompat-build/tools/zig/zig}"
 TARGET="${1:-win}"
 # the version the local server must report before the app talks to it (screens/boot.c)
-VERSION="${APP_VERSION:-5.0.0}"
+# the version is the native profile's (public-repo/profiles/lg-native.json), so the app and the
+# server it checks at start never disagree; APP_VERSION still overrides it
+PROFILE_JSON="$(dirname "$0")/../LG/public-repo/profiles/lg-native.json"
+PROFILE_VERSION="$(grep -o '"version": *"[0-9.]*"' "$PROFILE_JSON" 2>/dev/null | head -1 | grep -o '[0-9][0-9.]*')"
+VERSION="${APP_VERSION:-${PROFILE_VERSION:-5.0.0}}"
+[ -n "$PROFILE_VERSION" ] || echo "warning: no version in $PROFILE_JSON, using $VERSION" >&2
 SRC=$(ls "$HERE"/src/*.c "$HERE"/src/core/*.c "$HERE"/src/screens/*.c 2>/dev/null)
 CFLAGS="-std=c11 -O2 -Wall -Wextra -Wno-unused-parameter -I$HERE/src -I$HERE/src/core -I$HERE/src/platform -I$HERE/third_party/stb"
 

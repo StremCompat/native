@@ -53,6 +53,7 @@ typedef struct {
   int featured_at;
   double featured_since, last_key, hero_changed, asked_at;
   int hero_asked;
+  int waiting; /* a request for the rows is on its way */
   hero_info hero;
   const card *hero_from; /* the card it came from: one title can be on two rows */
   float rows_y;      /* shown vertical offset of the rows */
@@ -112,7 +113,12 @@ static void catalog_answered(const jval *answer, void *user) {
 }
 
 static void home_answered(const jval *answer, void *user) {
-  if (!answered_by((int)(intptr_t)user) || !answer) return;
+  if (!answered_by((int)(intptr_t)user)) return;
+  /* asked again only once this one is over: on a slow TV the answer can take longer than the
+     retry pause, and a new request each time threw the coming answer away and kept the server busy */
+  B->waiting = 0;
+  B->asked_at = B->clock_now;
+  if (!answer) return;
   const jval *list = json_get(answer, "rows");
   rows_clear();
   B->nrows = json_len(list);
@@ -146,6 +152,7 @@ void home_reload(void) {
   B = &home_board;
   B->loaded = 0;
   B->asked_at = -RETRY_MS;
+  B->waiting = 0;
   rows_clear();
   B->top = 1;
   B->cur = 0;
@@ -154,6 +161,7 @@ void home_reload(void) {
 static void load(void) {
   B->gen = ++requests;
   B->loaded = 0;
+  B->waiting = 1;
   B->asked_at = B->clock_now;
   api_get(B->path, home_answered, (void *)(intptr_t)B->gen);
 }
@@ -434,7 +442,7 @@ static void key(app_key k) {
 
 static void frame(double t, float dt) {
   B->clock_now = t;
-  if (!B->loaded && t - B->asked_at > RETRY_MS) load();
+  if (!B->loaded && !B->waiting && t - B->asked_at > RETRY_MS) load();
   int featured = at_featured();
   /* the rows below the featured titles start with the first one that has titles */
   if (!featured && B->cur < B->nrows && !B->rows[B->cur].n) move_row(1);
