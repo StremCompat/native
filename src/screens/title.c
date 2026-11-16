@@ -47,6 +47,7 @@ enum { CTRL_ORDER, CTRL_PREV, CTRL_LIST, CTRL_NEXT, CTRL_JUMP, CTRL_COUNT };
 
 static char *want_type, *want_id; /* what was opened */
 static int gen, loaded;
+static double still_since; /* the last key press, for the rolling description */
 static char *name, *logo, *runtime, *year, *rating, *genres, *people, *facts, *awards, *description;
 static action *actions;
 static int nactions;
@@ -194,6 +195,7 @@ static void answered(const jval *answer, void *user) {
 }
 
 void title_open(const char *type, const char *id) {
+  still_since = now_ms();
   free(want_type);
   free(want_id);
   want_type = str_dup(type);
@@ -354,7 +356,30 @@ static void control_key(void) {
   }
 }
 
+/* A description longer than its box: after a few seconds with the page still it rolls slowly up
+   inside the box, rests at the end and comes back (as the web interface does); a key press brings it
+   back to the top. The offset is worked out from the time alone, so nothing keeps running. */
+
+static float rolled_text(const char *s, float x, float y, float w, float size, uint32_t color, int lines, float lh) {
+  float box = lines * lh, full = text_draw_wrap(s, x, y, w, size, W_REGULAR, 0, 999, lh);
+  if (full <= box + 2) return text_draw_wrap(s, x, y, w, size, W_REGULAR, color, lines, lh);
+  float dist = full - box, roll = dist / 22.0f < 4 ? 4 : dist / 22.0f;
+  double t = (now_ms() - still_since) / 1000.0 - 3;
+  float off = 0;
+  if (t > 0) {
+    double cycle = roll + 3 + 1 + 4, at = t - cycle * (int)(t / cycle);
+    if (at < roll) off = dist * (float)(at / roll);
+    else if (at < roll + 3) off = dist;
+    else if (at < roll + 4) off = dist * (float)(1 - (at - roll - 3));
+  }
+  gfx_push_clip(x, y, w + 8, box);
+  text_draw_wrap(s, x, y - off, w, size, W_REGULAR, color, 999, lh);
+  gfx_pop_clip();
+  return box;
+}
+
 static void key(app_key k) {
+  still_since = now_ms();
   if (nav_has_focus()) {
     nav_key(k);
     return;
@@ -549,16 +574,15 @@ static void frame(double t, float dt) {
       y += draw_name(y, 420, 116, 54) + 14;
       text_draw_fit(ep->line ? ep->line : "", LEFT, y, WIDTH, 27, W_REGULAR, C_WHITE);
       y += text_line_height(27) + 10;
-      text_draw_wrap(ep->description ? ep->description : "", LEFT, y + (36 - text_line_height(24)) / 2, WIDTH * 0.8f,
-                     24, W_REGULAR, C_TEXT(0.72f), 2, 36);
+      rolled_text(ep->description ? ep->description : "", LEFT, y + (36 - text_line_height(24)) / 2, WIDTH * 0.8f, 24,
+                  C_TEXT(0.72f), 2, 36);
       y += 72 + 24;
     } else {
       y += draw_name(y, 480, 150, 68) + 18;
       y = draw_lines(y) + 12;
       float lh = 27 * 1.45f;
       if (description)
-        y += text_draw_wrap(description, LEFT, y + (lh - text_line_height(27)) / 2, WIDTH * 0.6f, 27, W_REGULAR,
-                            C_TEXT(0.78f), 3, lh);
+        y += rolled_text(description, LEFT, y + (lh - text_line_height(27)) / 2, WIDTH * 0.6f, 27, C_TEXT(0.78f), 3, lh);
       y += 32;
       draw_buttons(y);
       y += 64 + 30;

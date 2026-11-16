@@ -24,7 +24,7 @@
 #define MAX_ITEMS 400
 
 static char folder_id[128], title[160], cover[512];
-static char tab_names[MAX_TABS][160];
+static char tab_names[MAX_TABS][160], tab_message[MAX_TABS][200];
 static int tab_unavailable[MAX_TABS], ntabs, tab_at, on_tabs, gen;
 static card items[MAX_ITEMS];
 static int nitems, at, more, loading, loaded;
@@ -66,6 +66,7 @@ static void folder_came(const jval *answer, void *user) {
   for (int i = 0; i < json_len(tabs) && ntabs < MAX_TABS; i++, ntabs++) {
     snprintf(tab_names[ntabs], sizeof tab_names[0], "%s", json_str(json_get(json_at(tabs, i), "title"), ""));
     tab_unavailable[ntabs] = json_bool(json_get(json_at(tabs, i), "unavailable"), 0);
+    snprintf(tab_message[ntabs], sizeof tab_message[0], "%s", json_str(json_get(json_at(tabs, i), "message"), ""));
   }
   loaded = 1;
   load_page(0);
@@ -136,7 +137,9 @@ static void frame(double t, float dt) {
   }
   gfx_pop_clip();
   if (loaded && !nitems)
-    text_draw(tx(loading ? "searching" : tab_unavailable[tab_at] ? "folderSourceUnavailable" : "nothingFound"), LEFT, gy + 10, 26,
+    text_draw(!loading && tab_message[tab_at][0] ? tab_message[tab_at]
+              : tx(loading ? "searching" : tab_unavailable[tab_at] ? "folderSourceUnavailable" : "nothingFound"),
+              LEFT, gy + 10, 26,
               W_REGULAR, C_TEXT(0.72f));
   nav_draw(NAV_HOME, dt);
 }

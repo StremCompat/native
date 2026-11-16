@@ -258,6 +258,9 @@ static void follow_hero(void) {
   B->hero.name = copy(c->name);
   B->hero.where = copy(c->subtitle);
   B->hero.backdrop = copy(c->backdrop);
+  /* a folder: its logo, and how many lists it holds in place of a description */
+  if (c->logo) B->hero.logo = str_dup(c->logo);
+  if (c->type && !strcmp(c->type, "folder")) B->hero.description = copy(c->description);
   if (!strncmp(c->id, "tt", 2)) {
     char logo[256];
     snprintf(logo, sizeof logo, "https://images.metahub.space/logo/medium/%s/img", c->id);

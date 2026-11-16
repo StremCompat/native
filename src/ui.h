@@ -81,7 +81,9 @@ void ui_draw_toast(double t);
 typedef struct {
   char *id, *type, *name, *art, *backdrop, *poster, *subtitle, *video_id, *info, *description;
   char *shape, *glyph; /* a Collections folder: poster, square or wide, and its emoji or letters */
+  char *logo;          /* a folder's title logo, for the hero */
   float progress;
+  int hide_name; /* a folder whose cover carries its name */
   int watched, up_next, in_library, fresh, cw;
 } card;
 

@@ -21,7 +21,7 @@
 #define STEP_X 288.0f
 #define STEP_Y 420.0f
 #define COLS 5
-#define MAX_ITEMS 200
+#define MAX_ITEMS 500 /* the most Settings offers; the chosen one comes with each page */
 #define MAX_OPTIONS 64
 
 enum { F_TYPE, F_CATALOG, F_GENRE, F_COUNT };
@@ -52,14 +52,16 @@ static void page_came(const jval *answer, void *user) {
   read_options(F_CATALOG, json_get(answer, "catalogs"));
   read_options(F_GENRE, json_get(answer, "genres"));
   const jval *list = json_get(answer, "items");
-  for (int i = 0; i < json_len(list) && nitems < MAX_ITEMS; i++) {
+  int cap = (int)json_num(json_get(answer, "max"), 200);
+  if (cap < 1 || cap > MAX_ITEMS) cap = MAX_ITEMS;
+  for (int i = 0; i < json_len(list) && nitems < cap; i++) {
     const jval *v = json_at(list, i);
     const char *id = json_str(json_get(v, "id"), "");
     int seen = 0;
     for (int k = 0; k < nitems && !seen; k++) seen = items[k].id && !strcmp(items[k].id, id);
     if (!seen) card_read(&items[nitems++], v);
   }
-  ended = json_bool(json_get(answer, "ended"), 0) || nitems >= MAX_ITEMS;
+  ended = json_bool(json_get(answer, "ended"), 0) || nitems >= cap;
 }
 
 static void ask(void) {

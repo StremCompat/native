@@ -13,6 +13,8 @@
 /* registered and attached to the main loop; 0 when the bus refused (luna_error says why) */
 int luna_ready(void);
 const char *luna_error(void);
+/* the name the app took on the bus, for the reports */
+const char *luna_name(void);
 /* a call; with reply NULL one answer is asked and ignored */
 int luna_call(const char *uri, const char *payload, LSFilterFunc reply, LSMessageToken *token);
 void luna_cancel(LSMessageToken token);

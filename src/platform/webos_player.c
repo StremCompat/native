@@ -211,7 +211,7 @@ void player_poll(void) {
   luna_poll();
   if (status == PLAYER_LOADING && now_ms() - loading_since > LOAD_LIMIT_MS) {
     status = PLAYER_FAILED;
-    snprintf(error, sizeof error, "no picture after 30 s (%s, window %s)", last_event, window_id);
+    snprintf(error, sizeof error, "no picture after 30 s (%s, window %s, bus %s)", last_event, window_id, luna_name());
   }
 }
 

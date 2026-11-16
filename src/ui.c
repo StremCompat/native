@@ -187,6 +187,8 @@ void card_read(card *c, const jval *v) {
   c->description = dup_or_null(json_str(json_get(v, "description"), NULL));
   c->shape = dup_or_null(json_str(json_get(v, "shape"), NULL));
   c->glyph = dup_or_null(json_str(json_get(v, "glyph"), NULL));
+  c->logo = dup_or_null(json_str(json_get(v, "logo"), NULL));
+  c->hide_name = json_bool(json_get(v, "hideName"), 0);
   c->progress = (float)json_num(json_get(v, "progress"), 0);
   c->watched = json_bool(json_get(v, "watched"), 0);
   c->up_next = json_bool(json_get(v, "upNext"), 0);
@@ -208,6 +210,7 @@ void card_clear(card *c) {
   free(c->description);
   free(c->shape);
   free(c->glyph);
+  free(c->logo);
   memset(c, 0, sizeof *c);
 }
 
@@ -273,14 +276,21 @@ void ui_card(const card *c, float x, float y, int wide, int focused) {
   draw_card(c, x, y, wide ? WIDE_W : CARD_W, wide ? WIDE_H : CARD_H, wide, focused);
 }
 
+/* a Collections folder as Nuvio's TV app draws it: the cover fills a tile true to its shape (poster
+   2:3 and as wide as a card, square 1:1, wide 16:9 and 16:9 of a card's width), the name inside at
+   the bottom, the focus a ring */
 float ui_folder_width(const card *c) {
-  if (c->shape && !strcmp(c->shape, "wide")) return 540;
-  if (c->shape && !strcmp(c->shape, "square")) return CARD_H - 44;
+  if (c->shape && !strcmp(c->shape, "wide")) return CARD_W * 16.0f / 9.0f;
   return CARD_W;
 }
 
+static float folder_height(const card *c) {
+  if (c->shape && (!strcmp(c->shape, "wide") || !strcmp(c->shape, "square"))) return CARD_W;
+  return CARD_H;
+}
+
 void ui_folder_tile(const card *c, float x, float y, int focused) {
-  float w = ui_folder_width(c), h = CARD_H - 44;
+  float w = ui_folder_width(c), h = folder_height(c);
   gfx_rect(x, y, w, h, CARD_RADIUS, C_TEXT(0.07f));
   const sc_tex *pic = c->art ? img_get(c->art, (int)w, NULL) : NULL;
   if (pic) gfx_image(pic, x, y, w, h, CARD_RADIUS, 1, COVER);
@@ -288,8 +298,11 @@ void ui_folder_tile(const card *c, float x, float y, int focused) {
     float gw = text_width(c->glyph, 58, W_EXTRABOLD);
     ui_line(c->glyph, x + (w - gw) / 2, y, h, 58, W_EXTRABOLD, C_TEXT(0.85f));
   }
+  if (c->name && !c->hide_name) {
+    gfx_rect(x, y + h - 64, w, 64, CARD_RADIUS, SC_RGBA(0, 0, 0, 120));
+    text_draw_fit(c->name, x + 14, y + h - 40, w - 28, 21, W_BOLD, C_WHITE);
+  }
   if (focused) gfx_outline(x - 4, y - 4, w + 8, h + 8, CARD_RADIUS + 4, 4, C_WHITE);
-  if (c->name) text_draw_fit(c->name, x + 2, y + h + 10, w - 4, 21, W_SEMIBOLD, focused ? C_WHITE : C_TEXT(0.85f));
 }
 
 void ui_tile(const card *c, float x, float y, float w, float h, int focused) {
