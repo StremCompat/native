@@ -119,6 +119,26 @@ void sb_add_url(sbuf *b, const char *s) {
   }
 }
 
+/* /proc/meminfo is read with stdio: the system reports its size as 0, so read_file sees it empty */
+int sys_memory_mb(int *total, int *available) {
+#if defined(__linux__) && !defined(__EMSCRIPTEN__)
+  FILE *f = fopen("/proc/meminfo", "r");
+  if (!f) return -1;
+  char line[128];
+  long kb;
+  *total = *available = -1;
+  while (fgets(line, sizeof line, f)) {
+    if (sscanf(line, "MemTotal: %ld kB", &kb) == 1) *total = (int)(kb / 1024);
+    else if (sscanf(line, "MemAvailable: %ld kB", &kb) == 1) *available = (int)(kb / 1024);
+  }
+  fclose(f);
+  return *total > 0 ? 0 : -1;
+#else
+  (void)total, (void)available;
+  return -1;
+#endif
+}
+
 float clampf(float v, float lo, float hi) { return v < lo ? lo : v > hi ? hi : v; }
 
 float ease_out(float t) {

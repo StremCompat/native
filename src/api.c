@@ -25,12 +25,16 @@ static void answered(net_reply *r, void *user) {
   free(c);
 }
 
-void api_get(const char *path, api_done done, void *user) {
+static void get(const char *path, int lane, api_done done, void *user) {
   call *c = malloc(sizeof *c);
   c->done = done;
   c->user = user;
-  net_request(path, NULL, NET_HIGH, parse, answered, c);
+  net_request(path, NULL, lane, parse, answered, c);
 }
+
+void api_get(const char *path, api_done done, void *user) { get(path, NET_HIGH, done, user); }
+
+void api_get_slow(const char *path, api_done done, void *user) { get(path, NET_SLOW, done, user); }
 
 void api_post(const char *path, const char *json) { net_request(path, json, NET_HIGH, NULL, NULL, NULL); }
 

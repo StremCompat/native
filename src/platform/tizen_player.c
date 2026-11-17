@@ -164,4 +164,7 @@ void player_select_audio(int index) {
 }
 
 /* AVPlay takes whole speeds only on many models; a refusal leaves it at normal */
+/* the system does not say it */
+int player_audio_failed(void) { return 0; }
+
 int player_set_speed(double rate) { return js_order(4, rate) == 0; }

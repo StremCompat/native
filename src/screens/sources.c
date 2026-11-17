@@ -1,6 +1,6 @@
 /* The sources of a film or episode, in a panel over its page: Best source, the language filter,
-   the quality chips and the list, filled as the addons answer. The server orders and labels
-   them (/app/streams); measures are the web interface's (streams.css). */
+   the quality chips, one tab per addon and the list, filled as the addons answer. The server
+   orders and labels them (/app/streams); measures are the web interface's (streams.css). */
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -17,6 +17,7 @@
 #define PAD_L 34.0f
 #define PAD_R 54.0f
 #define LIST_Y 324.0f
+#define TABS_H 56.0f /* the addon tabs push the list down by this much */
 #define CONTENT_X (PANEL_X + PAD_L)
 #define CONTENT_W (800.0f - PAD_L - PAD_R)
 
@@ -35,18 +36,21 @@ typedef struct {
   char *key, *label;
 } chip;
 
-enum { ZONE_BEST, ZONE_LANG, ZONE_CHIPS, ZONE_LIST };
+enum { ZONE_BEST, ZONE_LANG, ZONE_CHIPS, ZONE_ADDONS, ZONE_LIST };
 
 static char *type, *id, *vid, *name;
 static int gen, version, done, asking, recommended;
 static source *items;
 static int nitems;
-static chip *chips, *langs;
-static int nchips, nlangs;
-static char *failed;
-static int zone = ZONE_LIST, chip_at, lang_at, item_at, moved;
+static chip *chips, *langs, *addons;
+static int nchips, nlangs, naddons;
+static char *failed, *left; /* the addons that did not answer, and those still to answer */
+static int zone = ZONE_LIST, chip_at, lang_at, addon_at, item_at, moved;
 static int next_episode; /* opened by the player for the next episode: a matching source plays */
-static float scroll;
+/* the source Best plays, and whether it may play now without the slowest addons; autoplay:
+   opened by Best on the title page, it plays as soon as it may unless the viewer moves first */
+static int best_seq, best_now, autoplay;
+static float scroll, tabs_scroll;
 
 static char *copy(const jval *v) {
   const char *s = json_str(v, NULL);
@@ -79,8 +83,10 @@ static void clear(void) {
   nitems = 0;
   free_chips(&chips, &nchips);
   free_chips(&langs, &nlangs);
+  free_chips(&addons, &naddons);
   free(failed);
-  failed = NULL;
+  free(left);
+  failed = left = NULL;
 }
 
 static void read_chips(const jval *list, chip **out, int *n) {
@@ -102,28 +108,41 @@ static void answered(const jval *answer, void *user) {
   if (!answer) return; /* asked again on the next frame */
   /* the focus stays on top until the viewer moves, then follows the source it is on */
   int keep = moved && item_at < nitems ? items[item_at].seq : -1;
-  char *keep_chip = str_dup(current(chips, nchips, chip_at)), *keep_lang = str_dup(current(langs, nlangs, lang_at));
+  char *keep_chip = str_dup(current(chips, nchips, chip_at)), *keep_lang = str_dup(current(langs, nlangs, lang_at)),
+       *keep_addon = str_dup(current(addons, naddons, addon_at));
   clear();
   version = (int)json_num(json_get(answer, "version"), 0);
   done = json_bool(json_get(answer, "done"), 0);
   recommended = (int)json_num(json_get(answer, "recommended"), -1);
+  best_seq = (int)json_num(json_get(answer, "best"), 0);
+  best_now = json_bool(json_get(answer, "bestNow"), 0);
   int match = (int)json_num(json_get(answer, "match"), 0);
-  if (next_episode && match > 0) {
-    next_episode = 0;
+  if ((next_episode && match > 0) || (autoplay && best_now && best_seq > 0)) {
+    int seq = next_episode && match > 0 ? match : best_seq;
+    next_episode = autoplay = 0;
+    free(keep_chip), free(keep_lang), free(keep_addon);
     app_back();
-    player_start(type, id, vid, match);
+    player_start(type, id, vid, seq);
     return;
   }
+  /* nothing Best could play: the list stays for the viewer to choose */
+  if (done) autoplay = 0;
   failed = copy(json_get(answer, "failed"));
+  left = copy(json_get(answer, "left"));
   read_chips(json_get(answer, "chips"), &chips, &nchips);
   read_chips(json_get(answer, "langs"), &langs, &nlangs);
-  chip_at = lang_at = 0;
+  read_chips(json_get(answer, "addons"), &addons, &naddons);
+  chip_at = lang_at = addon_at = 0;
   for (int i = 0; i < nchips; i++)
     if (!strcmp(chips[i].key, keep_chip)) chip_at = i;
   for (int i = 0; i < nlangs; i++)
     if (!strcmp(langs[i].key, keep_lang)) lang_at = i;
+  for (int i = 0; i < naddons; i++)
+    if (!strcmp(addons[i].key, keep_addon)) addon_at = i;
+  if (!naddons && zone == ZONE_ADDONS) zone = ZONE_CHIPS;
   free(keep_chip);
   free(keep_lang);
+  free(keep_addon);
   const jval *list = json_get(answer, "items");
   nitems = json_len(list);
   items = calloc((size_t)nitems + 1, sizeof(source));
@@ -158,11 +177,13 @@ static void ask(void) {
   sb_add_url(&p, current(chips, nchips, chip_at));
   sb_add(&p, "&lang=");
   sb_add_url(&p, current(langs, nlangs, lang_at));
+  sb_add(&p, "&addon=");
+  sb_add_url(&p, current(addons, naddons, addon_at));
   if (next_episode) {
     sb_add(&p, "&next=1&id=");
     sb_add_url(&p, id);
   }
-  api_get(p.s, answered, (void *)(intptr_t)gen);
+  api_get_slow(p.s, answered, (void *)(intptr_t)gen);
   sb_free(&p);
 }
 
@@ -183,8 +204,13 @@ void sources_open_next(const char *t, const char *title_id, const char *video) {
   refilter();
 }
 
+void sources_open_best(const char *t, const char *title_id, const char *video, const char *title_name) {
+  sources_open(t, title_id, video, title_name);
+  autoplay = 1;
+}
+
 void sources_open(const char *t, const char *title_id, const char *video, const char *title_name) {
-  next_episode = 0;
+  next_episode = autoplay = 0;
   free(type);
   free(id);
   free(vid);
@@ -197,13 +223,15 @@ void sources_open(const char *t, const char *title_id, const char *video, const 
   gen++;
   asking = version = done = 0;
   zone = ZONE_LIST;
-  chip_at = lang_at = item_at = moved = 0;
-  scroll = 0;
+  chip_at = lang_at = addon_at = item_at = moved = 0;
+  best_seq = best_now = 0;
+  scroll = tabs_scroll = 0;
   ask();
   app_push(&sources_screen);
 }
 
 static void key(app_key k) {
+  autoplay = 0; /* the viewer took over */
   if (k == K_BACK) {
     app_back();
     return;
@@ -211,15 +239,23 @@ static void key(app_key k) {
   if (zone == ZONE_LIST) {
     if (k == K_DOWN && item_at < nitems - 1) item_at++, moved = 1;
     else if (k == K_UP && item_at > 0) item_at--, moved = 1;
-    else if (k == K_UP) zone = ZONE_CHIPS;
+    else if (k == K_UP) zone = naddons ? ZONE_ADDONS : ZONE_CHIPS;
     else if (k == K_OK && item_at < nitems) player_start(type, id, vid, items[item_at].seq);
   } else if (zone == ZONE_CHIPS) {
     if (k == K_RIGHT && chip_at < nchips - 1) chip_at++, refilter();
     else if (k == K_LEFT && chip_at > 0) chip_at--, refilter();
+    else if (k == K_DOWN && naddons) zone = ZONE_ADDONS;
     else if (k == K_DOWN && nitems) zone = ZONE_LIST;
     else if (k == K_UP) zone = ZONE_BEST;
+  } else if (zone == ZONE_ADDONS) {
+    if (k == K_RIGHT && addon_at < naddons - 1) addon_at++, refilter();
+    else if (k == K_LEFT && addon_at > 0) addon_at--, refilter();
+    else if ((k == K_DOWN || k == K_OK) && nitems) zone = ZONE_LIST;
+    else if (k == K_UP) zone = ZONE_CHIPS;
   } else if (zone == ZONE_BEST) {
-    if (k == K_RIGHT && nlangs) zone = ZONE_LANG;
+    if (k == K_OK && best_seq > 0) player_start(type, id, vid, best_seq);
+    else if (k == K_OK) ui_toast(tx(done ? "noSources" : "findingSources"));
+    else if (k == K_RIGHT && nlangs) zone = ZONE_LANG;
     else if (k == K_DOWN) zone = ZONE_CHIPS;
   } else if (zone == ZONE_LANG) {
     if (k == K_LEFT) zone = ZONE_BEST;
@@ -285,16 +321,16 @@ static float draw_source(int i, float y, int draw) {
   return y + 24 - top;
 }
 
-static void draw_list(float dt) {
-  gfx_push_clip(CONTENT_X, LIST_Y, CONTENT_W, SC_DESIGN_H - 30 - LIST_Y);
+static void draw_list(float top, float dt) {
+  gfx_push_clip(CONTENT_X, top, CONTENT_W, SC_DESIGN_H - 30 - top);
   /* the focused source stays within 260 px of the top of the list */
   float at = 0;
   for (int i = 0; i < item_at && i < nitems; i++) at += draw_source(i, 0, 0) + 12;
   scroll = ui_approach(scroll, at > 260 ? at - 260 : 0, dt, 50);
-  float y = LIST_Y - scroll;
+  float y = top - scroll;
   for (int i = 0; i < nitems && y < SC_DESIGN_H; i++) {
     float h = draw_source(i, 0, 0);
-    if (y + h > LIST_Y) {
+    if (y + h > top) {
       if (zone == ZONE_LIST && i == item_at) {
         gfx_rect(CONTENT_X, y, CONTENT_W, h, 12, SC_RGBA(42, 48, 58, 255));
         gfx_outline(CONTENT_X, y, CONTENT_W, h, 12, 3, C_WHITE);
@@ -303,9 +339,35 @@ static void draw_list(float dt) {
     }
     y += h + 12;
   }
-  const char *note = !nitems && done ? tx(version ? "noSourcesQuality" : "noSources") : failed;
-  if (note && *note) text_draw_wrap(note, CONTENT_X + 26, y + 20, CONTENT_W - 52, 24, W_REGULAR, C_TEXT(0.72f), 3, 34);
-  if (!nitems && !done) text_draw(tx("searching"), CONTENT_X + 26, LIST_Y + 20, 24, W_REGULAR, C_TEXT(0.72f));
+  const char *notes[] = {!nitems && done ? tx(version ? "noSourcesQuality" : "noSources") : NULL, left, failed};
+  if (!nitems && !done) {
+    text_draw(tx("searching"), CONTENT_X + 26, top + 20, 24, W_REGULAR, C_TEXT(0.72f));
+    y += 44;
+  }
+  for (int i = 0; i < 3; i++)
+    if (notes[i] && *notes[i]) y += 10 + text_draw_wrap(notes[i], CONTENT_X + 26, y + 20, CONTENT_W - 52, 24, W_REGULAR, C_TEXT(0.72f), 3, 34);
+  gfx_pop_clip();
+}
+
+/* one tab per addon, under the quality chips; the row slides to keep the focused one in view */
+static void draw_tabs(float y, float dt) {
+  float x = 0, want = 0, gap = 10;
+  for (int i = 0; i < naddons; i++) {
+    float w = text_width(addons[i].label, 22, W_SEMIBOLD) + 24;
+    if (i == addon_at && x + w > CONTENT_W) want = x + w - CONTENT_W;
+    x += w + gap;
+  }
+  tabs_scroll = ui_approach(tabs_scroll, want, dt, 50);
+  gfx_push_clip(CONTENT_X, y, CONTENT_W, TABS_H);
+  x = CONTENT_X - tabs_scroll;
+  for (int i = 0; i < naddons; i++) {
+    int f = zone == ZONE_ADDONS && i == addon_at, cur = i == addon_at;
+    float w = text_width(addons[i].label, 22, W_SEMIBOLD) + 24;
+    if (f) gfx_rect(x, y + 4, w, 40, 8, C_WHITE);
+    else if (cur) gfx_rect(x + 12, y + 41, w - 24, 3, 1.5f, C_TEXT(0.8f));
+    ui_line(addons[i].label, x + 12, y + 4, 40, 22, W_SEMIBOLD, f ? C_BG : cur ? C_WHITE : C_TEXT(0.6f));
+    x += w + gap;
+  }
   gfx_pop_clip();
 }
 
@@ -342,7 +404,8 @@ static void frame(double t, float dt) {
     ui_line(chips[i].label, x + 28, y, 54, 25, W_SEMIBOLD, f ? C_BG : cur ? C_WHITE : C_TEXT(0.8f));
     x += w + 12;
   }
-  draw_list(dt);
+  if (naddons) draw_tabs(y + 54 + 8, dt);
+  draw_list(LIST_Y + (naddons ? TABS_H : 0), dt);
 }
 
 static void enter(void) {}

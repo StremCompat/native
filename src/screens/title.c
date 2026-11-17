@@ -306,7 +306,8 @@ static void run_action(const action *a) {
   else if (!strcmp(kind, "similar")) similar_open(want_type, want_id);
   else if (!strcmp(kind, "trailer")) player_play_trailer(want_type, want_id);
   else if (!strcmp(kind, "library")) toggle_library();
-  else if (!strcmp(kind, "episode") || !strcmp(kind, "sources") || !strcmp(kind, "best"))
+  else if (!strcmp(kind, "best")) sources_open_best(want_type, want_id, a->video ? a->video : want_id, name);
+  else if (!strcmp(kind, "episode") || !strcmp(kind, "sources"))
     sources_open(want_type, want_id, a->video ? a->video : want_id, name);
 }
 

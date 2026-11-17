@@ -34,4 +34,7 @@ void player_select_audio(int index);
 /* playback speed, 1 being normal; 0 when the system refused */
 int player_set_speed(double rate);
 
+/* 1 once when the system said it cannot decode the video's audio (the picture goes on) */
+int player_audio_failed(void);
+
 #endif

@@ -9,6 +9,8 @@
 typedef void (*api_done)(const jval *answer, void *user);
 
 void api_get(const char *path, api_done done, void *user);
+/* the same by the slow lane (net.h), for what the server may hold a while */
+void api_get_slow(const char *path, api_done done, void *user);
 /* sends JSON to the server without waiting for what it says */
 void api_post(const char *path, const char *json);
 

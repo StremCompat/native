@@ -34,7 +34,7 @@ static char last_event[48]; /* the last news from the media service, for a repor
 static const char *path = "first window"; /* where the picture goes, for the report */
 static double loading_since;
 static player_state status = PLAYER_IDLE;
-static int buffering, ntracks, audio_at, reloads;
+static int buffering, ntracks, audio_at, reloads, audio_failed;
 static double position, duration, start_at;
 static double reported_at; /* when the position last came, to move it on between reports */
 static double seek_to = -1, seek_asked_at, seek_sent_at, seek_retry_at;
@@ -167,6 +167,7 @@ static bool on_event(LSHandle *sh, LSMessage *msg, void *ctx) {
     if (code == 200) {
       /* the sound's format is not one this TV plays: the picture goes on, another track can be chosen */
       snprintf(last_event, sizeof last_event, "audio not supported");
+      audio_failed = 1;
     } else if (strstr(what, "is not running") && reloads < 2) {
       /* the TV's pipeline died (it happens a while after a seek): the same video, from here */
       reloads++;
@@ -366,6 +367,12 @@ int player_audio_tracks(player_track *out, int max) {
 }
 
 int player_audio_current(void) { return audio_at; }
+
+int player_audio_failed(void) {
+  int failed = audio_failed;
+  audio_failed = 0;
+  return failed;
+}
 
 int player_set_speed(double rate) {
   char payload[200];

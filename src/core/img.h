@@ -8,7 +8,8 @@
 
 #include "gfx.h"
 
-void img_init(size_t budget_bytes);
+/* the textures' memory budget: by the system's memory where it is known, else fallback_bytes */
+void img_init(size_t fallback_bytes);
 /* once per frame, before drawing: the clock for fades, and room made within the budget */
 void img_frame(double t);
 

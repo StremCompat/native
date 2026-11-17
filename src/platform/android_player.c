@@ -141,6 +141,9 @@ void player_select_audio(int index) {
   (*e)->DeleteLocalRef(e, cls);
 }
 
+/* the system does not say it */
+int player_audio_failed(void) { return 0; }
+
 int player_set_speed(double rate) {
   jclass cls;
   JNIEnv *e = env(&cls);

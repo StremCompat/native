@@ -850,6 +850,10 @@ static void frame(double t, float dt) {
   /* the video shows through: nothing is drawn where the picture is */
   gfx_clear(SC_RGBA(0, 0, 0, 0));
   player_state st = player_status();
+  if (player_audio_failed()) {
+    api_post("/app/learn", "{\"what\":\"audio\"}");
+    ui_toast(tx("audioNotPlayable"));
+  }
   if ((st == PLAYER_PLAYING || st == PLAYER_PAUSED) && player_duration() > 0) seen_at = player_position(), seen_len = player_duration();
   /* stopped by the system while it was open (Android stops it when the app goes to the background):
      what was watched is kept, and the app goes back */

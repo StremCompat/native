@@ -18,6 +18,10 @@
 #define ENTRIES 512 /* far more than a screen shows; when full, the one drawn longest ago goes */
 #define FADE_MS 220.0
 #define RETRY_MS 3000.0 /* a server that did not answer is asked again after this */
+/* every so often the system's free memory is looked at; under this, half the pictures not on
+   screen go, before the TV runs short (the video, the server and FFmpeg share it) */
+#define MEMORY_CHECK_MS 2000.0
+#define LOW_MEMORY_MB 160
 
 typedef enum { LOADING, READY, FAILED } state;
 
@@ -37,12 +41,18 @@ typedef struct {
 
 static entry entries[ENTRIES];
 static size_t budget, held;
-static double clock_now;
+static double clock_now, memory_checked;
 static int skip_fades;
 
 static size_t tex_bytes(const sc_tex *t) { return (size_t)t->w * t->h * 4; }
 
-void img_init(size_t bytes) { budget = bytes; }
+/* the budget by the system's memory where it can be read (40, 64, 128 or 192 MB), else the build's */
+void img_init(size_t fallback) {
+  int total, available;
+  budget = fallback;
+  if (sys_memory_mb(&total, &available) == 0)
+    budget = (size_t)(total < 1100 ? 40 : total < 2048 ? 64 : total < 4096 ? 128 : 192) << 20;
+}
 
 size_t img_bytes(void) { return held; }
 
@@ -208,7 +218,14 @@ const sc_tex *img_get(const char *url, int width, float *fade) {
 void img_frame(double t) {
   double last_frame = clock_now;
   clock_now = t;
-  /* the pictures not drawn for the longest time go until the rest fits the budget */
+  /* the pictures not drawn for the longest time go until the rest fits the budget, or half of what
+     is held when the system runs low */
+  size_t keep = budget;
+  int total, available;
+  if (t - memory_checked >= MEMORY_CHECK_MS) {
+    memory_checked = t;
+    if (sys_memory_mb(&total, &available) == 0 && available >= 0 && available < LOW_MEMORY_MB) keep = held / 2;
+  }
   entry *o;
-  while (held > budget && (o = oldest(last_frame))) forget(o);
+  while (held > keep && (o = oldest(last_frame))) forget(o);
 }

@@ -21,24 +21,34 @@ typedef struct job {
 static job *finished, **finished_tail = &finished;
 static int pending, port;
 
-/* the body comes as a binary string (x-user-defined), copied into the C heap with a zero byte */
-EM_JS(void, js_request, (int port, const char *path, const char *body, int sync, void *job), {
-  var x = new XMLHttpRequest();
-  var url = "http://127.0.0.1:" + port + UTF8ToString(path);
-  function answer() {
-    var text = x.responseText || "", n = text.length, at = _malloc(n + 1);
-    for (var i = 0; i < n; i++) HEAPU8[at + i] = text.charCodeAt(i) & 255;
-    HEAPU8[at + n] = 0;
-    _web_net_answer(job, x.status, at, n);
+/* The body comes as a binary string (x-user-defined), copied into the C heap with a zero byte.
+   The browser opens at most six connections to one address: the slow lane (NET_SLOW) asks the
+   same server as "localhost", which counts as another, so a request the server holds never keeps
+   the pictures waiting. If that name does not reach the server, the lane is dropped. */
+EM_JS(void, js_request, (int port, const char *path, const char *body, int sync, int slow, void *job), {
+  var where = UTF8ToString(path), sent = body ? UTF8ToString(body) : null;
+  function ask(lane) {
+    var x = new XMLHttpRequest();
+    function answer() {
+      if (lane && !x.status) {
+        Module.scSlowLaneOff = true;
+        return ask(false);
+      }
+      var text = x.responseText || "", n = text.length, at = _malloc(n + 1);
+      for (var i = 0; i < n; i++) HEAPU8[at + i] = text.charCodeAt(i) & 255;
+      HEAPU8[at + n] = 0;
+      _web_net_answer(job, x.status, at, n);
+    }
+    x.open(sent !== null ? "POST" : "GET", "http://" + (lane ? "localhost" : "127.0.0.1") + ":" + port + where, !sync);
+    /* a plain POST, which needs no CORS preflight; the server reads the JSON whatever its type */
+    x.overrideMimeType("text/plain; charset=x-user-defined");
+    if (!sync) x.onloadend = answer;
+    try {
+      x.send(sent);
+    } catch (e) {}
+    if (sync) answer();
   }
-  x.open(body ? "POST" : "GET", url, !sync);
-  /* a plain POST, which needs no CORS preflight; the server reads the JSON whatever its type */
-  x.overrideMimeType("text/plain; charset=x-user-defined");
-  if (!sync) x.onloadend = answer;
-  try {
-    x.send(body ? UTF8ToString(body) : null);
-  } catch (e) {}
-  if (sync) answer();
+  ask(slow && !sync && !Module.scSlowLaneOff);
 });
 
 EMSCRIPTEN_KEEPALIVE void web_net_answer(job *j, int status, char *body, int len) {
@@ -60,18 +70,17 @@ int net_init(int server_port, int workers) {
 void net_shutdown(void) {}
 
 void net_request(const char *path, const char *body, int priority, net_work_fn work, net_done_fn done, void *user) {
-  (void)priority;
   job *j = calloc(1, sizeof *j);
   j->work = work;
   j->done = done;
   j->user = user;
   pending++;
-  js_request(port, path, body, 0, j);
+  js_request(port, path, body, 0, priority == NET_SLOW, j);
 }
 
 void net_fetch(const char *path, const char *body, net_reply *r) {
   job j = {.sync = 1};
-  js_request(port, path, body, 1, &j);
+  js_request(port, path, body, 1, 0, &j);
   *r = j.reply;
   r->result = NULL;
 }

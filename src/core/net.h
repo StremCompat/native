@@ -18,7 +18,9 @@ typedef void (*net_work_fn)(net_reply *r, void *user);
 /* runs on the main thread, inside net_poll */
 typedef void (*net_done_fn)(net_reply *r, void *user);
 
-enum { NET_HIGH, NET_LOW }; /* screens' data first, pictures after */
+/* screens' data first, pictures after; the slow lane has a worker of its own, for what the server
+   may hold a while (the sources as the addons answer), so it never keeps the others waiting */
+enum { NET_HIGH, NET_LOW, NET_SLOW };
 
 int net_init(int port, int workers);
 void net_shutdown(void);

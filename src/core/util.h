@@ -21,6 +21,10 @@ void utf8_upper(char *out, size_t size, const char *s);
 /* milliseconds since an arbitrary start */
 double now_ms(void);
 
+/* the system's memory in MB, all of it and what is free for use; 0 when it is known (Linux:
+   webOS and Android), -1 elsewhere */
+int sys_memory_mb(int *total, int *available);
+
 /* a string that grows as text is added */
 typedef struct {
   char *s;
