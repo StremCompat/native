@@ -12,7 +12,7 @@
 #include "ui.h"
 #include "util.h"
 
-enum { A_OPEN, A_SIMILAR, A_TRAILER, A_WATCHED, A_UNWATCHED, A_CW_WATCHED, A_CW_REMOVE, A_HIDE_NEW, A_LIBRARY };
+enum { A_OPEN, A_SIMILAR, A_TRAILER, A_WATCHED, A_UNWATCHED, A_CW_WATCHED, A_CW_REMOVE, A_HIDE_NEW, A_SHOW_WATCHED, A_SHOW_UNWATCHED, A_LIBRARY };
 
 static card it;
 static int cw;
@@ -62,15 +62,17 @@ void card_menu_open(const card *c, int continue_watching) {
   cw = continue_watching;
   int series = it.type && !strcmp(it.type, "series");
   menu_begin(&actions, it.name ? it.name : "");
+  /* play and the library first, what dismisses last */
   menu_add(&actions, cw ? tx("continueLabel") : tx("details"), 0, A_OPEN);
+  menu_add(&actions, tx(c->in_library ? "removeLibrary" : "addLibrary"), 0, A_LIBRARY);
+  if (cw) menu_add(&actions, tx("markWatched"), 0, A_CW_WATCHED);
+  /* a film anywhere else: watched or not, either way; a series, all of it at once */
+  if (!cw && !series) menu_add(&actions, tx(c->watched ? "markUnwatched" : "markWatched"), 0, c->watched ? A_UNWATCHED : A_WATCHED);
+  if (series) menu_add(&actions, tx(c->watched ? "markSeriesUnwatched" : "markSeriesWatched"), 0, c->watched ? A_SHOW_UNWATCHED : A_SHOW_WATCHED);
   menu_add(&actions, tx("similarTitles"), 0, A_SIMILAR);
   menu_add(&actions, tx("trailer"), 0, A_TRAILER);
-  if (cw) menu_add(&actions, tx("markWatched"), 0, A_CW_WATCHED);
-  /* a film anywhere else: watched or not, either way */
-  if (!cw && !series) menu_add(&actions, tx(c->watched ? "markUnwatched" : "markWatched"), 0, c->watched ? A_UNWATCHED : A_WATCHED);
   if (cw) menu_add(&actions, tx("removeFromCw"), 0, A_CW_REMOVE);
   if (c->fresh) menu_add(&actions, tx("hideNewEpisodes"), 0, A_HIDE_NEW);
-  menu_add(&actions, tx(c->in_library ? "removeLibrary" : "addLibrary"), 0, A_LIBRARY);
   app_push(&card_menu_screen);
 }
 
@@ -91,6 +93,8 @@ static void key(app_key k) {
   case A_CW_WATCHED: send("cwWatched", 1); break;
   case A_CW_REMOVE: send("cwRemove", 1); break;
   case A_HIDE_NEW: send("hideNew", 1); break;
+  case A_SHOW_WATCHED: send("show", 1); break;
+  case A_SHOW_UNWATCHED: send("show", 0); break;
   default: send("library", 1); break;
   }
 }

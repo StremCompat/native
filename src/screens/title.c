@@ -276,6 +276,15 @@ static void mark(int watched) {
     sb_add(&b, ",\"videoId\":");
     sb_add_json_str(&b, shown(ep_at)->id);
     shown(ep_at)->watched = watched;
+    /* watched takes the earlier regular episodes along (the server marks them too) */
+    for (int s = 0; watched && s < nseasons; s++) {
+      int reached = 0;
+      for (int e = 0; e < seasons[s].n && !reached; e++) {
+        if (&seasons[s].eps[e] == shown(ep_at)) reached = 1;
+        else if (seasons[s].number > 0) seasons[s].eps[e].watched = 1;
+      }
+      if (reached) break;
+    }
     sb_add(&b, "}");
   } else {
     sb_add(&b, "},\"vids\":[");
