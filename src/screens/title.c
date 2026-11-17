@@ -31,7 +31,7 @@ typedef struct {
 
 typedef struct {
   char *id, *title, *title_overall, *line, *description, *thumbnail, *badge, *date;
-  int absolute, own_thumbnail, watched;
+  int absolute, own_thumbnail, watched, blur;
   float progress;
 } episode;
 
@@ -174,6 +174,7 @@ static void read_page(const jval *t) {
       ep->absolute = (int)json_num(json_get(ev, "absolute"), 0);
       ep->own_thumbnail = json_bool(json_get(ev, "ownThumbnail"), 0);
       ep->watched = json_bool(json_get(ev, "watched"), 0);
+      ep->blur = json_bool(json_get(ev, "blur"), 0);
       ep->progress = (float)json_num(json_get(ev, "progress"), 0);
     }
   }
@@ -519,7 +520,8 @@ static void draw_episode(const episode *ep, float x, float y, int focused) {
   }
   gfx_rect(x, y, EP_W, EP_THUMB_H, 12, SC_RGBA(13, 13, 14, 255));
   float fade;
-  const sc_tex *pic = img_get(ep->thumbnail, (int)EP_W, &fade);
+  /* a spoiler (Settings): the picture asked tiny and drawn full size, which blurs it */
+  const sc_tex *pic = img_get(ep->thumbnail, ep->blur && !ep->watched ? 24 : (int)EP_W, &fade);
   if (pic) gfx_image(pic, x, y, EP_W, EP_THUMB_H, 12, fade * (ep->own_thumbnail ? 1 : 0.52f), COVER);
   gfx_gradient(x, y + EP_THUMB_H * 0.6f, EP_W, EP_THUMB_H * 0.4f, 12, SC_RGBA(0, 0, 0, 0), SC_RGBA(0, 0, 0, 128), 1);
   if (ep->badge) {
@@ -563,7 +565,8 @@ static void frame(double t, float dt) {
   int on_episode = zone == ZONE_EPISODES && shown_count();
   const episode *ep = on_episode ? shown(ep_at) : NULL;
   /* the focused episode's picture behind the page, else the title's */
-  backdrop_set(&bg, ep && ep->thumbnail ? ep->thumbnail : background);
+  /* a spoiler's picture is not shown big behind the page either */
+  backdrop_set(&bg, ep && ep->thumbnail && !(ep->blur && !ep->watched) ? ep->thumbnail : background);
   backdrop_draw(&bg, 653, SC_DESIGN_H, 0.88f, dt);
   static const shade_stop down[] = {{0, 0.04f}, {0.46f, 0.04f}, {0.76f, 0.72f}, {0.96f, 1}};
   static const shade_stop right[] = {{0.34f, 1}, {0.41f, 0.92f}, {0.49f, 0.7f}, {0.58f, 0.42f}, {0.69f, 0.16f}, {0.80f, 0}};
