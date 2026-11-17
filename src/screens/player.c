@@ -2,11 +2,13 @@
    draws its controls over it as the web player does (player.css): the title, the bar with the
    position, the buttons, the seek steps that add up, short messages, and the cover while it
    loads. What is watched goes to the server every few seconds (/app/progress). */
+#include <ctype.h>
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "api.h"
 #include "img.h"
@@ -69,6 +71,19 @@ static struct {
 } skips[MAX_SKIPS];
 static int nskips, binge;
 static double countdown_at; /* when the countdown to the next episode began, 0 when none */
+/* where the end credits begin (seconds, -1 unknown), and the next-episode card shown over them:
+   its sources are asked for as it appears, so the next episode starts at once */
+static double credits_at = -1;
+/* Settings > Seek preview: pictures of the film over the bar while seeking, made by the server
+   (/previews starts them once the length is known, /preview-frame gives the nearest one) */
+static int previews_on, previews_asked;
+/* Settings > Skip intro and recap: 'b'utton (OK), 'a'uto, 'o'ff; and the one skipped by itself */
+static char skip_mode = 'b';
+static int auto_skipped = -1;
+#define PREVIEW_BUCKET_S 10
+static int np_shown, np_dismissed, np_fetched;
+#define NEXT_CARD_LEAD_S 180.0 /* without known credits, the card comes this long before the end */
+#define NEXT_CARD_MIN_S 600.0  /* shorter videos get no card */
 static char *want_type, *want_id, *want_vid; /* what was asked, to fall back on the sources */
 static double clock_now, bar_until, seek_target = -1, seek_base = -1, seek_at, last_report;
 
@@ -138,6 +153,9 @@ static uint32_t hex_color(const char *hex) {
   return SC_RGBA((v >> 16) & 255, (v >> 8) & 255, v & 255, 255);
 }
 
+static void add_segment(const char *kind, double start, double end);
+static const char *chapter_kind(const char *name);
+
 /* the file's chapters, read by the server (FFprobe) */
 static void probe_came(const jval *answer, void *user) {
   if ((intptr_t)user != gen) return;
@@ -147,25 +165,77 @@ static void probe_came(const jval *answer, void *user) {
     chapter_at[nchapters] = json_num(json_get(json_at(marks, i), "t"), 0);
     snprintf(chapter_name[nchapters], sizeof chapter_name[0], "%s", json_str(json_get(json_at(marks, i), "name"), ""));
   }
-}
-
-/* ---------- starting ---------- */
-static void skips_came(const jval *answer, void *user) {
-  const jval *list = json_get(answer, "segments");
-  if ((intptr_t)user != gen) return;
-  nskips = 0;
-  for (int i = 0; i < json_len(list) && nskips < MAX_SKIPS; i++) {
-    const char *kind = json_str(json_get(json_at(list, i), "kind"), "");
-    if (strcmp(kind, "intro") && strcmp(kind, "recap")) continue;
-    skips[nskips].start = json_num(json_get(json_at(list, i), "start"), 0);
-    skips[nskips].end = json_num(json_get(json_at(list, i), "end"), 0);
-    skips[nskips].recap = !strcmp(kind, "recap");
-    nskips++;
+  for (int i = 0; i < nchapters; i++) {
+    const char *kind = chapter_kind(chapter_name[i]);
+    double end = i + 1 < nchapters ? chapter_at[i + 1] : player_duration() / 1000;
+    if (kind) add_segment(kind, chapter_at[i], end);
   }
 }
 
-/* the intro or recap being played now, or -1 */
+/* ---------- starting ---------- */
+/* an intro or recap to skip (one of each), or where the credits begin */
+static void add_segment(const char *kind, double start, double end) {
+  if (!strcmp(kind, "outro")) {
+    if (credits_at < 0 && start > 0) credits_at = start;
+    return;
+  }
+  int recap = !strcmp(kind, "recap");
+  if ((!recap && strcmp(kind, "intro")) || end <= start || nskips >= MAX_SKIPS) return;
+  for (int i = 0; i < nskips; i++)
+    if (skips[i].recap == recap) return;
+  skips[nskips].start = start;
+  skips[nskips].end = end;
+  skips[nskips].recap = recap;
+  nskips++;
+}
+
+/* a chapter named like an opening, a recap or the credits (the web player's list, skips.js) */
+static const char *chapter_kind(const char *name) {
+  static const char *words[][2] = {
+      {"intro", "intro"},     {"opening", "intro"},     {"op", "intro"},          {"abertura", "intro"},
+      {"ouverture", "intro"}, {"vorspann", "intro"},    {"apertura", "intro"},    {"sigla", "intro"},
+      {"recap", "recap"},     {"previously", "recap"},  {"resumo", "recap"},      {"anteriormente", "recap"},
+      {"riassunto", "recap"}, {"credits", "outro"},     {"end credits", "outro"}, {"ending", "outro"},
+      {"ed", "outro"},        {"abspann", "outro"},     {"titoli di coda", "outro"}};
+  char low[64];
+  size_t n = 0;
+  for (; name[n] && n < sizeof low - 1; n++) low[n] = (char)tolower((unsigned char)name[n]);
+  low[n] = 0;
+  for (size_t i = 0; i < sizeof words / sizeof words[0]; i++) {
+    size_t len = strlen(words[i][0]);
+    if (!strncmp(low, words[i][0], len) && !isalpha((unsigned char)low[len])) return words[i][1];
+  }
+  return NULL;
+}
+
+/* the next episode's sources, asked for while this one ends: the answer is not needed here, the
+   server keeps the search for when the next episode opens */
+static void next_fetched(const jval *answer, void *user) { (void)answer, (void)user; }
+
+static void fetch_next_sources(void) {
+  if (np_fetched || !info.type || !info.next) return;
+  np_fetched = 1;
+  sbuf p = {0};
+  sb_add(&p, "/app/streams?have=0&type=");
+  sb_add_url(&p, info.type);
+  sb_add(&p, "&vid=");
+  sb_add_url(&p, info.next);
+  api_get_slow(p.s, next_fetched, NULL);
+  sb_free(&p);
+}
+
+static void skips_came(const jval *answer, void *user) {
+  const jval *list = json_get(answer, "segments");
+  if ((intptr_t)user != gen) return;
+  for (int i = 0; i < json_len(list); i++) {
+    const jval *s = json_at(list, i);
+    add_segment(json_str(json_get(s, "kind"), ""), json_num(json_get(s, "start"), 0), json_num(json_get(s, "end"), 0));
+  }
+}
+
+/* the intro or recap being played now, or -1 (always -1 when Settings turned the skips off) */
 static int skip_now(void) {
+  if (skip_mode == 'o') return -1;
   double t = player_position() / 1000;
   for (int i = 0; i < nskips; i++)
     if (t >= skips[i].start && t < skips[i].end - 1) return i;
@@ -212,6 +282,10 @@ static void started(const jval *answer, void *user) {
   sub_outline = hex_color(json_str(json_get(style, "outline"), "#000000"));
   sub_background = (float)json_num(json_get(style, "background"), 0);
   binge = json_bool(json_get(answer, "binge"), 1);
+  previews_on = json_bool(json_get(answer, "previews"), 0);
+  previews_asked = 0;
+  skip_mode = json_str(json_get(answer, "skipIntro"), "button")[0];
+  auto_skipped = -1;
   if (info.vid) {
     sbuf p = {0};
     sb_add(&p, "/skips?vid=");
@@ -220,7 +294,7 @@ static void started(const jval *answer, void *user) {
     sb_free(&p);
   }
   subs_reset(info.type, info.id, info.vid, json_str(json_get(answer, "ref"), ""), info.url,
-             json_str(json_get(answer, "subtitleLanguage"), ""));
+             json_str(json_get(answer, "subtitleLanguage"), ""), json_bool(json_get(answer, "forcedOnly"), 0));
   double resume = json_num(json_get(answer, "resume"), 0);
   seen_at = seen_len = 0;
   player_open(info.url, resume);
@@ -252,6 +326,8 @@ void player_play_address(const char *url, const char *title, int is_live) {
   button = B_PLAY;
   seek_target = seek_base = -1;
   nskips = 0;
+  credits_at = -1;
+  np_shown = np_dismissed = np_fetched = 0;
   countdown_at = 0;
   seen_at = seen_len = 0;
   player_open(info.url, 0);
@@ -298,6 +374,8 @@ void player_start(const char *type, const char *id, const char *vid, int seq) {
   seek_target = seek_base = -1;
   bar_until = 0;
   nskips = 0;
+  credits_at = -1;
+  np_shown = np_dismissed = np_fetched = 0;
   countdown_at = 0;
   sbuf p = {0};
   sb_add(&p, "/app/play?type=");
@@ -522,7 +600,7 @@ static void ask_list(int which, const char *path, api_done done) {
 
 static void choose(int id) {
   if (id == ROW_WAIT || id == ROW_OFF) {
-    if (id == ROW_OFF) subs_choose(-1);
+    if (id == ROW_OFF) subs_choose(-1), subs_remember(-1);
     list.open = 0;
     return;
   }
@@ -540,7 +618,7 @@ static void choose(int id) {
     report("seek");
   }
   if (view == VIEW_AUDIO) player_select_audio(id);
-  else if (view == VIEW_SUBS) subs_choose(id);
+  else if (view == VIEW_SUBS) subs_choose(id), subs_remember(id);
   else if (view == VIEW_EPISODES && episode_ids[id] && strcmp(episode_ids[id], info.vid ? info.vid : "")) {
     char *type = str_dup(info.type), *title = str_dup(info.id), *episode = str_dup(episode_ids[id]);
     leave();
@@ -574,6 +652,11 @@ static void key(app_key k) {
   bar_until = clock_now + BAR_SHOW_MS;
   /* any key means someone is watching */
   if (!countdown_at) auto_next_count = 0;
+  if (np_shown && !np_dismissed && mode == MODE_VIDEO && !list.open && (k == K_OK || k == K_BACK)) {
+    if (k == K_OK) go_next();
+    else np_dismissed = 1;
+    return;
+  }
   if (k == K_BACK && !list.open) {
     leave();
     return;
@@ -679,6 +762,45 @@ static void draw_button(int b, float x, float y, float size) {
   }
 }
 
+/* the clock time the video ends at if it plays on from here: 22:41 */
+static void ends_at(char *out, size_t size, double left_ms) {
+  time_t end = time(NULL) + (time_t)(left_ms / 1000);
+  struct tm *t = localtime(&end);
+  if (t) strftime(out, size, "%H:%M", t);
+  else snprintf(out, size, "--:--");
+}
+
+/* gaps in the seek bar where the chapters begin: the file's own, or the intro, recap and credits */
+static void draw_chapter_marks(float x, float y, float w, float h, double len_s) {
+  if (len_s <= 0 || live) return;
+  double at[MAX_CHAPTERS];
+  int n = 0;
+  for (int i = 0; i < nchapters && n < MAX_CHAPTERS; i++) at[n++] = chapter_at[i];
+  if (!nchapters) {
+    for (int i = 0; i < nskips && n < MAX_CHAPTERS - 2; i++) at[n++] = skips[i].start, at[n++] = skips[i].end;
+    if (credits_at > 0 && n < MAX_CHAPTERS) at[n++] = credits_at;
+  }
+  for (int i = 0; i < n; i++)
+    if (at[i] > 1 && at[i] < len_s - 1) gfx_rect(x + (float)(w * at[i] / len_s) - 2, y, 4, h, 0, SC_RGBA(0, 0, 0, 200));
+}
+
+/* the picture of the film where the seek would land, centred over the knob */
+static void draw_preview(float cx, float bottom, double at_ms) {
+  int bucket = (int)(at_ms / 1000) / PREVIEW_BUCKET_S * PREVIEW_BUCKET_S;
+  sbuf p = {0};
+  sb_add(&p, "/preview-frame?u=");
+  sb_add_url(&p, info.url);
+  sb_addf(&p, "&t=%d", bucket);
+  float fade;
+  const sc_tex *frame_tex = img_get(p.s, 320, &fade);
+  sb_free(&p);
+  float w = 320, h = 180, x = cx - w / 2;
+  if (x < 52) x = 52;
+  if (x + w > SC_DESIGN_W - 52) x = SC_DESIGN_W - 52 - w;
+  gfx_rect(x - 4, bottom - h - 4, w + 8, h + 8, 12, SC_RGBA(20, 20, 22, 230));
+  if (frame_tex) gfx_image(frame_tex, x, bottom - h, w, h, 9, fade, COVER);
+}
+
 static void draw_bar(void) {
   /* #bar: a shade from the bottom, the title, the season line, the position and the buttons */
   gfx_gradient(0, SC_DESIGN_H - 420, SC_DESIGN_W, 420, 0, SC_RGBA(0, 0, 0, 0), SC_RGBA(0, 0, 0, 235), 1);
@@ -690,7 +812,11 @@ static void draw_bar(void) {
   format_time(total, sizeof total, d);
   format_time(left, sizeof left, d - at);
   if (live) snprintf(times, sizeof times, "%s", tx("liveNow"));
-  else snprintf(times, sizeof times, "%s / %s   -%s", now, total, left);
+  else {
+    char ends[16];
+    ends_at(ends, sizeof ends, d - at);
+    snprintf(times, sizeof times, "%s / %s   -%s   \xC2\xB7   %s", now, total, left, txf("endsAt", ends, NULL));
+  }
   float tw = text_width(times, 26, W_REGULAR);
   float bar_w = SC_DESIGN_W - 104 - tw - 48, frac = live ? 1 : d > 0 ? (float)clampf((float)(at / d), 0, 1) : 0;
   int seek_focus = mode == MODE_SEEK, seeking = seek_target >= 0;
@@ -699,6 +825,8 @@ static void draw_bar(void) {
   if (seek_focus) gfx_outline(x - 3, y + 4 - bh / 2 - 3, bar_w + 6, bh + 6, 6, 3, C_TEXT(0.34f));
   gfx_rect(x, y + 4 - bh / 2, bar_w, bh, 3, C_TEXT(0.22f));
   gfx_rect(x, y + 4 - bh / 2, bar_w * frac, bh, 3, C_WHITE);
+  draw_chapter_marks(x, y + 4 - bh / 2, bar_w, bh, d / 1000);
+  if (previews_on && (seek_focus || seeking) && !live) draw_preview(x + bar_w * frac, y - 26, at);
   float knob = seek_focus ? 28 : seeking ? 26 : 18;
   gfx_rect(x + bar_w * frac - knob / 2 - 4, y + 4 - knob / 2 - 4, knob + 8, knob + 8, knob / 2 + 4, C_TEXT(0.22f));
   gfx_rect(x + bar_w * frac - knob / 2, y + 4 - knob / 2, knob, knob, knob / 2, C_WHITE);
@@ -820,6 +948,16 @@ static void draw_skip(void) {
   ui_line(label, x + 30, y, 64, 26, W_BOLD, C_WHITE);
 }
 
+/* Over the credits: the next episode, OK to play it, Back to stay (the web player's card) */
+static void draw_next_card(void) {
+  const char *label = txp("nextEpisode", NULL), *hint = tx("nextCardHint");
+  float w = text_width(label, 28, W_BOLD) + 110, x = SC_DESIGN_W - 52 - w, y = SC_DESIGN_H - 230 - 76;
+  gfx_rect(x, y, w, 76, 38, C_WHITE);
+  ui_icon(ICON_PLAY, x + 30, y + 24, 28, C_BG);
+  ui_line(label, x + 72, y, 76, 28, W_BOLD, C_BG);
+  text_draw(hint, SC_DESIGN_W - 52 - text_width(hint, 22, W_SEMIBOLD), y + 90, 22, W_SEMIBOLD, C_TEXT(0.78f));
+}
+
 /* the end of an episode: the next one in a few seconds, OK at once, Back leaves */
 static void draw_countdown(double t) {
   gfx_rect(0, 0, SC_DESIGN_W, SC_DESIGN_H, 0, SC_RGBA(10, 10, 11, 235));
@@ -862,6 +1000,26 @@ static void frame(double t, float dt) {
     return;
   }
   if (seek_target >= 0 && t - seek_at > SEEK_COMMIT_MS) commit_seek();
+  if (skip_mode == 'a' && st == PLAYER_PLAYING && skip_now() >= 0 && skip_now() != auto_skipped) {
+    auto_skipped = skip_now();
+    player_seek(skips[auto_skipped].end * 1000);
+    report("seek");
+  }
+  if (previews_on && !previews_asked && !live && info.url && player_duration() > 0) {
+    previews_asked = 1;
+    sbuf p = {0};
+    sb_add(&p, "/previews?u=");
+    sb_add_url(&p, info.url);
+    sb_addf(&p, "&dur=%d", (int)(player_duration() / 1000));
+    api_get(p.s, next_fetched, NULL);
+    sb_free(&p);
+  }
+  if (st == PLAYER_PLAYING && binge && info.next && !live) {
+    double len = player_duration() / 1000, pos = player_position() / 1000;
+    int due = len >= NEXT_CARD_MIN_S && (credits_at > 0 ? pos >= credits_at : len - pos <= NEXT_CARD_LEAD_S) && len - pos > 2;
+    np_shown = due;
+    if (due) fetch_next_sources();
+  }
   if (st == PLAYER_PLAYING && t - last_report > REPORT_EVERY_MS) report("tick");
   if (st == PLAYER_ENDED && binge && info.next) {
     if (!countdown_at) countdown_at = t;
@@ -893,6 +1051,7 @@ static void frame(double t, float dt) {
     else if (t < bar_until || st == PLAYER_PAUSED || seek_target >= 0 || list.open) draw_bar();
     draw_seek_amount();
     draw_skip();
+    if (np_shown && !np_dismissed && !list.open) draw_next_card();
     menu_draw(&list, list_left ? 52 : SC_DESIGN_W - 52 - 384, SC_DESIGN_H - 190);
   }
 }

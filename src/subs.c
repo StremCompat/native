@@ -1,5 +1,6 @@
 #include "subs.h"
 
+#include <ctype.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -18,7 +19,7 @@ typedef struct {
 
 static char *type, *id, *vid, *ref, *video, *want;
 static sub_choice choices[MAX_CHOICES];
-static int nchoices, current = -1, gen, decided;
+static int nchoices, current = -1, gen, decided, forced_only;
 static cue *cues;
 static int ncues, cap_cues, reading_done, polling;
 static double last_poll, delay;
@@ -51,18 +52,34 @@ static int same_language(const char *a, const char *b) {
   return a && b && *a && *b && !strncmp(a, b, 2);
 }
 
-/* the first subtitle in the wanted language, addons before the file's, once both lists came */
-static void decide(void) {
-  if (decided || !want || !*want) return;
-  for (int i = 0; i < nchoices; i++)
-    if (same_language(choices[i].lang, want)) {
-      decided = 1;
-      subs_choose(i);
-      return;
-    }
+/* full subtitles before those for the hard of hearing, then forced ones (only the foreign lines),
+   commentary last: from the file's own marks (kind) or what the name says */
+static int subtitle_rank(const char *name, const char *kind) {
+  char low[200];
+  size_t n = 0;
+  for (; name && name[n] && n < sizeof low - 1; n++) low[n] = (char)tolower((unsigned char)name[n]);
+  low[n] = 0;
+  if (!strcmp(kind, "commentary") || strstr(low, "comment")) return 3;
+  if (!strcmp(kind, "forced") || strstr(low, "forced") || strstr(low, "signs")) return 2;
+  if (!strcmp(kind, "sdh") || strstr(low, "sdh") || strstr(low, "hearing")) return 1;
+  return 0;
 }
 
-static void add_choice(const char *name, const char *lang, const char *url, int embedded, int stream) {
+/* the best ranked subtitle in the wanted language (the addons' first among equals); with forced
+   only, a forced one or none */
+static void decide(void) {
+  if (decided || !want || !*want) return;
+  int best = -1;
+  for (int i = 0; i < nchoices; i++) {
+    if (!same_language(choices[i].lang, want) || (forced_only && choices[i].rank != 2)) continue;
+    if (best < 0 || choices[i].rank < choices[best].rank) best = i;
+  }
+  if (best < 0) return;
+  decided = 1;
+  subs_choose(best);
+}
+
+static void add_choice(const char *name, const char *lang, const char *url, int embedded, int stream, const char *kind) {
   if (nchoices >= MAX_CHOICES) return;
   sub_choice *c = &choices[nchoices++];
   c->name = copy(name);
@@ -70,6 +87,7 @@ static void add_choice(const char *name, const char *lang, const char *url, int 
   c->url = copy(url);
   c->embedded = embedded;
   c->stream = stream;
+  c->rank = subtitle_rank(name, kind);
 }
 
 static void addon_list(const jval *answer, void *user) {
@@ -79,7 +97,7 @@ static void addon_list(const jval *answer, void *user) {
     const jval *s = json_at(list, i);
     char name[160];
     snprintf(name, sizeof name, "%s  \xC2\xB7  %s", json_str(json_get(s, "name"), ""), json_str(json_get(s, "src"), ""));
-    add_choice(name, json_str(json_get(s, "lang"), ""), json_str(json_get(s, "u"), ""), 0, 0);
+    add_choice(name, json_str(json_get(s, "lang"), ""), json_str(json_get(s, "u"), ""), 0, 0, "");
   }
   decide();
 }
@@ -90,13 +108,14 @@ static void file_list(const jval *answer, void *user) {
   for (int i = 0; i < json_len(list); i++) {
     const jval *t = json_at(list, i);
     add_choice(json_str(json_get(t, "name"), ""), json_str(json_get(t, "lang"), ""), NULL, 1,
-               (int)json_num(json_get(t, "n"), 0));
+               (int)json_num(json_get(t, "n"), 0), json_str(json_get(t, "kind"), ""));
   }
   decide();
 }
 
 void subs_reset(const char *t, const char *title_id, const char *video_id, const char *stream_ref,
-                const char *video_url, const char *wanted) {
+                const char *video_url, const char *wanted, int only_forced) {
+  forced_only = only_forced;
   for (int i = 0; i < nchoices; i++) {
     free(choices[i].name);
     free(choices[i].lang);
@@ -172,6 +191,19 @@ void subs_choose(int i) {
   polling = 1;
   api_get(p.s, cues_came, (void *)(intptr_t)gen);
   sb_free(&p);
+}
+
+void subs_remember(int i) {
+  if (!id) return;
+  const char *lang = i >= 0 && i < nchoices && choices[i].lang && *choices[i].lang ? choices[i].lang : "off";
+  sbuf b = {0};
+  sb_add(&b, "{\"id\":");
+  sb_add_json_str(&b, id);
+  sb_add(&b, ",\"sub\":");
+  sb_add_json_str(&b, lang);
+  sb_add(&b, "}");
+  api_post("/app/titlepref", b.s);
+  sb_free(&b);
 }
 
 void subs_tick(double position_ms) {

@@ -6,16 +6,20 @@
 typedef struct {
   char *name, *lang, *url; /* url: an addon's file; embedded ones are read out of the video */
   int embedded, stream;    /* the subtitle stream's number in the file */
+  int rank;                /* for the first choice: 0 full, 1 SDH, 2 forced, 3 commentary */
 } sub_choice;
 
-/* a new video: its title, the stream reference and address, and the language wanted ("" none) */
+/* a new video: its title, the stream reference and address, the language wanted ("" none), and
+   forced_only (Settings): only a forced track, the lines in another language and the signs */
 void subs_reset(const char *type, const char *id, const char *vid, const char *ref, const char *video_url,
-                const char *want);
+                const char *want, int forced_only);
 int subs_count(void);
 const sub_choice *subs_at(int i);
 /* the one shown, or -1 for none */
 int subs_current(void);
 void subs_choose(int i);
+/* the viewer chose subtitle i (-1 none): kept for this title, its next episodes start with it */
+void subs_remember(int i);
 /* once in a while with the position: the lines of a subtitle read from the file keep coming */
 void subs_tick(double position_ms);
 /* the subtitles later (positive) or earlier, in seconds */

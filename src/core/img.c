@@ -142,7 +142,8 @@ static void arrived(net_reply *r, void *user) {
       held += tex_bytes(&e->tex);
     } else {
       e->st = FAILED;
-      e->unreachable = r->status == 0;
+      /* no answer, or "not made yet" (a seek preview): asked again in a moment */
+      e->unreachable = r->status == 0 || r->status == 204;
       e->ready_at = clock_now;
     }
   }
@@ -155,12 +156,17 @@ static void arrived(net_reply *r, void *user) {
 
 static void load(entry *e) {
   sbuf req = {0};
-  sb_add(&req, "/app/img?u=");
-  sb_add_url(&req, strchr(e->key, ' ') + 1);
-  /* the server makes the picture about as wide as it is shown first (twice a small one, for
-     sharpness), so the TV never decodes a 4K backdrop for a 1280 slot */
+  const char *url = strchr(e->key, ' ') + 1;
   int width = atoi(e->key);
-  if (width > 0) sb_addf(&req, "&w=%d", width <= 640 ? width * 2 : width);
+  /* a picture the local server makes itself (a seek preview) is asked of it as it is */
+  if (url[0] == '/') sb_add(&req, url);
+  else {
+    sb_add(&req, "/app/img?u=");
+    sb_add_url(&req, url);
+    /* the server makes the picture about as wide as it is shown first (twice a small one, for
+       sharpness), so the TV never decodes a 4K backdrop for a 1280 slot */
+    if (width > 0) sb_addf(&req, "&w=%d", width <= 640 ? width * 2 : width);
+  }
   e->st = LOADING;
   net_request(req.s, NULL, NET_LOW, decode, arrived, str_dup(e->key));
   sb_free(&req);
