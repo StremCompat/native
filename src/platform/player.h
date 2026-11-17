@@ -37,4 +37,7 @@ int player_set_speed(double rate);
 /* 1 once when the system said it cannot decode the video's audio (the picture goes on) */
 int player_audio_failed(void);
 
+/* 1 while the picture is HDR or Dolby Vision, as far as the system says */
+int player_hdr(void);
+
 #endif

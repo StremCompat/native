@@ -146,6 +146,11 @@ static void report(const char *event) {
   last_report = clock_now;
 }
 
+/* a subtitle colour at 80 %: full white on an HDR picture is glaring next to the film */
+static uint32_t dim(uint32_t c) {
+  return SC_RGBA((int)(((c >> 24) & 255) * 0.8f), (int)(((c >> 16) & 255) * 0.8f), (int)(((c >> 8) & 255) * 0.8f), c & 255);
+}
+
 /* "#rrggbb" as a colour */
 static uint32_t hex_color(const char *hex) {
   unsigned v = 0xFFFFFF;
@@ -912,7 +917,7 @@ static void draw_subtitle(void) {
     /* the outline: the line drawn around itself in the outline colour */
     static const float around[8][2] = {{-2, 0}, {2, 0}, {0, -2}, {0, 2}, {-2, -2}, {2, 2}, {-2, 2}, {2, -2}};
     for (int o = 0; o < 8; o++) text_draw_fit(lines[i], x + around[o][0], y + around[o][1], max_w, size, W_REGULAR, sub_outline);
-    text_draw_fit(lines[i], x, y, max_w, size, W_REGULAR, sub_color);
+    text_draw_fit(lines[i], x, y, max_w, size, W_REGULAR, player_hdr() ? dim(sub_color) : sub_color);
   }
 }
 

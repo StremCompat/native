@@ -34,7 +34,7 @@ static char last_event[48]; /* the last news from the media service, for a repor
 static const char *path = "first window"; /* where the picture goes, for the report */
 static double loading_since;
 static player_state status = PLAYER_IDLE;
-static int buffering, ntracks, audio_at, reloads, audio_failed;
+static int buffering, ntracks, audio_at, reloads, audio_failed, hdr;
 static double position, duration, start_at;
 static double reported_at; /* when the position last came, to move it on between reports */
 static double seek_to = -1, seek_asked_at, seek_sent_at, seek_retry_at;
@@ -137,6 +137,10 @@ static bool on_event(LSHandle *sh, LSMessage *msg, void *ctx) {
   if (d_ms > 0) duration = d_ms;
   /* the picture's real size, rate and range, which the plane is told of */
   const jval *video = json_get(e, "videoInfo");
+  if (video->type == J_OBJ) {
+    const char *kind = json_str(json_get(video, "hdrType"), "");
+    hdr = *kind && strcmp(kind, "none") && strcmp(kind, "NONE");
+  }
   if (video->type == J_OBJ)
     acb_video_info((int)json_num(json_get(video, "width"), 0), (int)json_num(json_get(video, "height"), 0),
                    json_num(json_get(video, "frameRate"), 0), json_num(json_get(video, "bitRate"), 0),
@@ -367,6 +371,8 @@ int player_audio_tracks(player_track *out, int max) {
 }
 
 int player_audio_current(void) { return audio_at; }
+
+int player_hdr(void) { return hdr; }
 
 int player_audio_failed(void) {
   int failed = audio_failed;
