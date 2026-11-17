@@ -11,6 +11,7 @@
 #include "img.h"
 #include "net.h"
 #include "platform.h"
+#include "saver.h"
 #include "screens.h"
 #include "ui.h"
 #include "util.h"
@@ -77,8 +78,17 @@ void app_back(void) {
 
 void app_quit(void) { quit = 1; }
 
+/* when a key last came, for the screensaver; a key while it shows only ends it */
+static double last_key_at = -1;
+
 static void on_key(app_key k) {
-  if (k != K_NONE && depth) stack[depth - 1]->key(k);
+  if (k == K_NONE) return;
+  last_key_at = last_frame;
+  if (saver_active()) {
+    saver_stop();
+    return;
+  }
+  if (depth) stack[depth - 1]->key(k);
 }
 
 /* OK is told on release, or as K_MENU once it has been held down (web: hold OK) */
@@ -144,6 +154,7 @@ void app_ready(void) {
   else if (!strcmp(json_str(json_get(st, "provider"), ""), "nuvio")) profiles_open(1);
   else app_show(&home_screen);
   update_check();
+  saver_init();
   json_free(d);
   free(r.body);
 }
@@ -161,6 +172,9 @@ void app_frame(int w, int h, double t) {
   if (depth > 1 && stack[depth - 1]->overlay) stack[depth - 2]->frame(t, dt);
   if (depth) stack[depth - 1]->frame(t, dt);
   ui_draw_toast(t);
+  if (last_key_at < 0) last_key_at = t;
+  saver_tick(t, last_key_at, depth && stack[depth - 1] != &player_screen);
+  saver_draw(t);
   gfx_end();
 }
 
