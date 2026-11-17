@@ -271,8 +271,10 @@ static float tag_row(const source *s, float x, float y, float w, int focused, in
   for (int i = 0; i < s->ntags; i++) {
     const tag *t = &s->tags[i];
     const char *kind = t->kind ? t->kind : "";
-    int fx = !strcmp(kind, "fx"), outline = fx || !strcmp(kind, "size") || !strcmp(kind, "seed") || !strcmp(kind, "sublang");
-    float size = fx ? 17 : 20, tw = text_width(t->text ? t->text : "", size, W_BOLD) + 22;
+    int fx = !strcmp(kind, "fx"), cached = !strcmp(kind, "cached"),
+        outline = fx || !strcmp(kind, "size") || !strcmp(kind, "seed") || !strcmp(kind, "sublang") || !strcmp(kind, "src");
+    /* a cached source leads with a bolt, drawn: the font has no such character */
+    float size = fx ? 17 : 20, bolt = cached ? 22 : 0, tw = text_width(t->text ? t->text : "", size, W_BOLD) + 22 + bolt;
     if (x + tw > tx0 + w) x = tx0, y += line_h;
     if (!draw) {
       x += tw + 8;
@@ -281,12 +283,15 @@ static float tag_row(const source *s, float x, float y, float w, int focused, in
     uint32_t back = C_TEXT(0.1f), fore = C_TEXT(0.9f), ring = 0;
     if (!strcmp(kind, "q")) back = focused ? C_WHITE : C_TEXT(0.2f), fore = focused ? C_BG : C_WHITE;
     else if (!strcmp(kind, "lang")) back = focused ? C_TEXT(0.24f) : SC_RGBA(142, 227, 173, 41), fore = focused ? C_WHITE : SC_RGBA(191, 240, 208, 255);
+    else if (cached) back = focused ? SC_RGBA(48, 209, 88, 255) : SC_RGBA(48, 209, 88, 51), fore = focused ? SC_RGBA(6, 33, 15, 255) : SC_RGBA(159, 240, 180, 255);
+    else if (!strcmp(kind, "warn")) back = SC_RGBA(255, 159, 10, 51), fore = SC_RGBA(255, 196, 107, 255);
     else if (fx) back = focused ? C_BG : 0, fore = C_WHITE, ring = focused ? C_WHITE : C_TEXT(0.7f);
     else if (outline) back = 0, fore = focused ? C_WHITE : !strcmp(kind, "sublang") ? C_TEXT(0.75f) : C_TEXT(0.9f), ring = focused && !strcmp(kind, "sublang") ? C_TEXT(0.5f) : C_TEXT(0.18f);
     else if (focused) back = C_TEXT(0.24f), fore = C_WHITE;
     if (back) gfx_rect(x, y, tw, 32, 6, back);
     if (ring) gfx_outline(x, y, tw, 32, 6, 2, ring);
-    ui_line(t->text, x + 11, y, 32, size, W_BOLD, fore);
+    if (cached) ui_icon(ICON_BOLT, x + 8, y + 7, 18, fore);
+    ui_line(t->text, x + 11 + bolt, y, 32, size, W_BOLD, fore);
     x += tw + 8;
   }
   return s->ntags ? y + line_h - 6 : y;
