@@ -39,7 +39,7 @@ case "$TARGET" in
     mkdir -p "$OUT"
     "$TC/bin/arm-webos-linux-gnueabi-gcc" $CFLAGS -D_GNU_SOURCE -DAPP_VERSION="\"$VERSION\"" -DSC_PORT=8083 -DIMG_BUDGET="(48u << 20)" -I"$SYSROOT/usr/include/SDL2" \
       -I"$SYSROOT/usr/include/glib-2.0" -I"$SYSROOT/usr/lib/glib-2.0/include" \
-      $SRC "$HERE/src/platform/webos.c" "$HERE/src/platform/webos_player.c" "$HERE/src/platform/webos_luna.c" \
+      $SRC "$HERE/src/platform/webos.c" "$HERE/src/platform/webos_player.c" "$HERE/src/platform/webos_luna.c" "$HERE/src/platform/webos_acb.c" \
       -Wl,--as-needed -lSDL2 -lluna-service2 -lglib-2.0 -ldl -lpthread -lm -o "$OUT/stremcompat"
     "$TC/bin/arm-webos-linux-gnueabi-strip" "$OUT/stremcompat"
     rm -rf "$OUT/assets"

@@ -135,8 +135,10 @@ int subs_current(void) { return current; }
 static void cues_came(const jval *answer, void *user) {
   if ((intptr_t)user != gen) return;
   polling = 0;
+  /* no answer is not the end: the next poll asks again */
+  if (!answer) return;
   add_cues(json_get(answer, "cues"));
-  reading_done = json_bool(json_get(answer, "done"), 1) || json_bool(json_get(answer, "gone"), 0);
+  reading_done = json_bool(json_get(answer, "done"), 0) || json_bool(json_get(answer, "gone"), 0);
 }
 
 /* the address that names a subtitle stream of the file to the server */

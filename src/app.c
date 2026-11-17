@@ -128,9 +128,16 @@ void app_ready(void) {
   snprintf(path, sizeof path, "/app/state?tvLanguage=%s", language);
   net_reply r = {0};
   net_fetch(path, NULL, &r);
+  /* no answer is not "signed out": the opening screen waits for the server again (a slow TV can
+     still be bringing the account) instead of showing the sign-in to someone signed in */
+  if (r.status != 200 || !r.body) {
+    free(r.body);
+    app_show(&boot_screen);
+    return;
+  }
   api_load_strings();
   /* signed in: Home, or for a Nuvio account who is watching first; otherwise signing in */
-  jdoc *d = r.status == 200 && r.body ? json_parse(r.body, r.len) : NULL;
+  jdoc *d = json_parse(r.body, r.len);
   const jval *st = json_root(d);
   nav_show_calendar(strcmp(json_str(json_get(st, "provider"), ""), "nuvio") != 0);
   if (!json_bool(json_get(st, "signedIn"), 0)) app_show(&login_screen);

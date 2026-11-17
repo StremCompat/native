@@ -46,6 +46,9 @@ void platform_init(void) {
   int signals[] = {SIGSEGV, SIGBUS, SIGILL, SIGFPE, SIGABRT};
   for (int i = 0; i < 5; i++) signal(signals[i], crashed);
   if (freopen("/tmp/stremcompat-native.log", "w", stderr)) setvbuf(stderr, NULL, _IOLBF, 0);
+  /* the app's id, before SDL starts: the compositor and the TV's media libraries (ACB) read it */
+  if (!getenv("APPID")) setenv("APPID", SC_APP_ID, 1);
+  if (!getenv("LS2_APPID")) setenv("LS2_APPID", SC_APP_ID, 1);
   /* Back comes to the app instead of closing it; the app decides when Back means leave */
   SDL_SetHint(SDL_HINT_WEBOS_ACCESS_POLICY_KEYS_BACK, "true");
   SDL_SetHint(SDL_HINT_WEBOS_CURSOR_SLEEP_TIME, "5000");

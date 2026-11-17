@@ -174,7 +174,10 @@ static void action_done(net_reply *r, void *user) {
   const jval *a = json_root(d);
   const char *message = json_str(json_get(a, "message"), "");
   if (*message) ui_toast(message);
-  if (json_bool(json_get(a, "signedOut"), 0)) app_show(&login_screen);
+  if (json_bool(json_get(a, "signedOut"), 0)) {
+    home_reload();
+    app_show(&login_screen);
+  }
   if (json_bool(json_get(a, "changed"), 0)) home_reload();
   json_free(d);
 }

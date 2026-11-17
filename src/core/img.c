@@ -147,9 +147,10 @@ static void load(entry *e) {
   sbuf req = {0};
   sb_add(&req, "/app/img?u=");
   sb_add_url(&req, strchr(e->key, ' ') + 1);
-  /* a small picture (a channel logo, a store card) is made that wide by the server first */
+  /* the server makes the picture about as wide as it is shown first (twice a small one, for
+     sharpness), so the TV never decodes a 4K backdrop for a 1280 slot */
   int width = atoi(e->key);
-  if (width > 0 && width <= 640) sb_addf(&req, "&w=%d", width * 2);
+  if (width > 0) sb_addf(&req, "&w=%d", width <= 640 ? width * 2 : width);
   e->st = LOADING;
   net_request(req.s, NULL, NET_LOW, decode, arrived, str_dup(e->key));
   sb_free(&req);

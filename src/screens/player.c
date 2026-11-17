@@ -34,6 +34,9 @@ typedef struct {
 static play_info info;
 static int gen, ready, mode, button = B_PLAY, seek_step = 10, resuming;
 static int live; /* a channel: no length, no seeking, nothing kept */
+/* where the video last was while it played: the system can stop the player on its own (Android
+   in the background), after which it knows neither */
+static double seen_at, seen_len;
 
 /* Settings > Subtitles: their size, colour, outline and background strength */
 static float sub_size = 38, sub_background;
@@ -98,7 +101,8 @@ static void format_time(char *out, size_t size, double ms) {
 
 /* ---------- what is reported to the server ---------- */
 static void report(const char *event) {
-  double d = player_duration();
+  double at = player_position(), d = player_duration();
+  if (d <= 0) at = seen_at, d = seen_len;
   if (!info.id || !info.type || d <= 0 || live) return;
   sbuf b = {0};
   sb_add(&b, "{\"type\":");
@@ -119,7 +123,7 @@ static void report(const char *event) {
     sb_add(&b, ",\"next\":");
     sb_add_json_str(&b, info.next);
   }
-  sb_addf(&b, ",\"time\":%.0f,\"duration\":%.0f,\"event\":", player_position(), d);
+  sb_addf(&b, ",\"time\":%.0f,\"duration\":%.0f,\"event\":", at, d);
   sb_add_json_str(&b, event);
   sb_add(&b, "}");
   api_post("/app/progress", b.s);
@@ -218,6 +222,7 @@ static void started(const jval *answer, void *user) {
   subs_reset(info.type, info.id, info.vid, json_str(json_get(answer, "ref"), ""), info.url,
              json_str(json_get(answer, "subtitleLanguage"), ""));
   double resume = json_num(json_get(answer, "resume"), 0);
+  seen_at = seen_len = 0;
   player_open(info.url, resume);
   speed = 1;
   nchapters = 0;
@@ -248,6 +253,7 @@ void player_play_address(const char *url, const char *title, int is_live) {
   seek_target = seek_base = -1;
   nskips = 0;
   countdown_at = 0;
+  seen_at = seen_len = 0;
   player_open(info.url, 0);
   ready = 1;
   app_push(&player_screen);
@@ -745,15 +751,32 @@ static void draw_subtitle(void) {
   if (!text) return;
   char lines[8][512];
   int n = 0;
+  float size = sub_size, max_w = SC_DESIGN_W * 0.88f;
+  /* each line of the subtitle, wrapped at word breaks when it is wider than the screen (a long
+     line used to end in "..." and lose its end) */
   for (const char *p = text; *p && n < 8;) {
     const char *end = strchr(p, '\n');
     size_t len = end ? (size_t)(end - p) : strlen(p);
-    if (len >= sizeof lines[0]) len = sizeof lines[0] - 1;
-    memcpy(lines[n], p, len);
-    lines[n++][len] = 0;
+    char cur[512] = "";
+    size_t at = 0;
+    while (at < len && n < 8) {
+      while (at < len && p[at] == ' ') at++;
+      size_t word = at;
+      while (word < len && p[word] != ' ') word++;
+      if (word == at) break;
+      char next[512];
+      snprintf(next, sizeof next, "%s%s%.*s", cur, cur[0] ? " " : "", (int)(word - at), p + at);
+      if (cur[0] && text_width(next, size, W_REGULAR) > max_w) {
+        snprintf(lines[n++], sizeof lines[0], "%s", cur);
+        snprintf(cur, sizeof cur, "%.*s", (int)(word - at), p + at);
+      } else
+        snprintf(cur, sizeof cur, "%s", next);
+      at = word;
+    }
+    if (cur[0] && n < 8) snprintf(lines[n++], sizeof lines[0], "%s", cur);
     p += len + (end ? 1 : 0);
   }
-  float size = sub_size, lh = size * 1.35f, y = SC_DESIGN_H * 0.92f - n * lh, max_w = SC_DESIGN_W * 0.88f;
+  float lh = size * 1.35f, y = SC_DESIGN_H * 0.92f - n * lh;
   for (int i = 0; i < n; i++, y += lh) {
     float w = text_width(lines[i], size, W_REGULAR), x = w < max_w ? (SC_DESIGN_W - w) / 2 : SC_DESIGN_W * 0.06f;
     if (sub_background > 0)
@@ -827,6 +850,13 @@ static void frame(double t, float dt) {
   /* the video shows through: nothing is drawn where the picture is */
   gfx_clear(SC_RGBA(0, 0, 0, 0));
   player_state st = player_status();
+  if ((st == PLAYER_PLAYING || st == PLAYER_PAUSED) && player_duration() > 0) seen_at = player_position(), seen_len = player_duration();
+  /* stopped by the system while it was open (Android stops it when the app goes to the background):
+     what was watched is kept, and the app goes back */
+  if (ready && st == PLAYER_IDLE) {
+    leave();
+    return;
+  }
   if (seek_target >= 0 && t - seek_at > SEEK_COMMIT_MS) commit_seek();
   if (st == PLAYER_PLAYING && t - last_report > REPORT_EVERY_MS) report("tick");
   if (st == PLAYER_ENDED && binge && info.next) {
@@ -847,7 +877,9 @@ static void frame(double t, float dt) {
     draw_failure();
     return;
   }
-  if (!ready || st == PLAYER_LOADING || (!live && player_duration() <= 0)) {
+  /* a video whose length the system has not said yet shows anyway once it plays (it used to stay
+     covered for good when the length never came) */
+  if (!ready || st == PLAYER_LOADING || (!live && player_duration() <= 0 && st != PLAYER_PLAYING && st != PLAYER_PAUSED)) {
     draw_cover(1);
   } else {
     if (player_buffering()) gfx_rect(0, 0, SC_DESIGN_W, SC_DESIGN_H, 0, SC_RGBA(10, 10, 11, 128));

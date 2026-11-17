@@ -8,6 +8,7 @@
 
 #include "api.h"
 #include "keyboard.h"
+#include "nav.h"
 #include "net.h"
 #include "screens.h"
 #include "text.h"
@@ -33,6 +34,9 @@ static void start_code(void);
 static void signed_in(int profiles) {
   gen++;
   set_status("accountConnected");
+  /* a new account: its own Home (not the last one's), and the Calendar only for Stremio */
+  home_reload();
+  nav_show_calendar(!profiles);
   if (profiles) profiles_open(1);
   else app_show(&home_screen);
 }
