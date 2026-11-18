@@ -74,3 +74,10 @@ void platform_install_update(void (*done)(const char *error)) { done("tizen"); }
 
 /* the page carries only Inter; the TV's fonts are not reachable from it */
 void platform_add_fonts(void) {}
+/* no system link opens a title here */
+int platform_take_link(char *type, char *id, int size) {
+  (void)type;
+  (void)id;
+  (void)size;
+  return 0;
+}

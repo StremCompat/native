@@ -38,4 +38,8 @@ void platform_fatal(const char *message);
 /* offers the system's fonts to the text module, best candidates for CJK first */
 void platform_add_fonts(void);
 
+/* a title the system asked to open (Android TV's Continue Watching row): 1 and its type and id,
+   once; 0 when none waits */
+int platform_take_link(char *type, char *id, int size);
+
 #endif

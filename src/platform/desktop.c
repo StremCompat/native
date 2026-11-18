@@ -60,3 +60,10 @@ void platform_add_fonts(void) {
   }
 }
 
+/* no system link opens a title here */
+int platform_take_link(char *type, char *id, int size) {
+  (void)type;
+  (void)id;
+  (void)size;
+  return 0;
+}

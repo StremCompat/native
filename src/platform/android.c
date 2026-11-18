@@ -2,7 +2,10 @@
    over the video surface; the local server runs on the embedded Node the activity starts. */
 #include "platform.h"
 
+#include <SDL.h>
+#include <jni.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "text.h"
 
@@ -54,4 +57,29 @@ void platform_add_fonts(void) {
   static const char *fonts[] = {"/system/fonts/NotoSansCJK-Regular.ttc", "/system/fonts/NotoSansSymbols-Regular-Subsetted.ttf",
                                 "/system/fonts/DroidSansFallback.ttf"};
   for (size_t i = 0; i < sizeof fonts / sizeof fonts[0]; i++) text_add_fallback(fonts[i]);
+}
+
+/* the activity keeps the link it was opened with (MainActivity.takeLink): "type\tid", or null */
+int platform_take_link(char *type, char *id, int size) {
+  JNIEnv *e = (JNIEnv *)SDL_AndroidGetJNIEnv();
+  jclass cls = (*e)->FindClass(e, "io/github/alexesmm/stremcompat/MainActivity");
+  if (!cls) return (*e)->ExceptionClear(e), 0;
+  jmethodID m = (*e)->GetStaticMethodID(e, cls, "takeLink", "()Ljava/lang/String;");
+  int found = 0;
+  if (!m) (*e)->ExceptionClear(e);
+  else {
+    jstring link = (jstring)(*e)->CallStaticObjectMethod(e, cls, m);
+    if (link) {
+      const char *s = (*e)->GetStringUTFChars(e, link, NULL), *tab = s ? strchr(s, '\t') : NULL;
+      if (tab && tab - s < 16) {
+        snprintf(type, 16, "%.*s", (int)(tab - s), s);
+        snprintf(id, (size_t)size, "%s", tab + 1);
+        found = type[0] && id[0];
+      }
+      if (s) (*e)->ReleaseStringUTFChars(e, link, s);
+      (*e)->DeleteLocalRef(e, link);
+    }
+  }
+  (*e)->DeleteLocalRef(e, cls);
+  return found;
 }

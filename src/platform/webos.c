@@ -210,3 +210,10 @@ static void add_fonts(const char *dir, int depth) {
 
 /* the TV's own fonts include Korean, Japanese and Chinese ones */
 void platform_add_fonts(void) { add_fonts("/usr/share/fonts", 0); }
+/* no system link opens a title here */
+int platform_take_link(char *type, char *id, int size) {
+  (void)type;
+  (void)id;
+  (void)size;
+  return 0;
+}

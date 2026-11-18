@@ -169,6 +169,11 @@ void app_frame(int w, int h, double t) {
   gfx_begin(w, h, C_BG);
   platform_poll();
   update_poll();
+  /* a title asked from the system's home screen opens over Home once Home is there */
+  char link_type[16], link_id[128];
+  if (depth && stack[0] == &home_screen && stack[depth - 1] != &player_screen &&
+      platform_take_link(link_type, link_id, sizeof link_id))
+    title_open(link_type, link_id);
   if (depth > 1 && stack[depth - 1]->overlay) stack[depth - 2]->frame(t, dt);
   if (depth) stack[depth - 1]->frame(t, dt);
   ui_draw_toast(t);
