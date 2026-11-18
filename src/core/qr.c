@@ -32,7 +32,7 @@ static void divisor(int degree, int *out) {
   }
 }
 
-static void remainder(const int *data, int n, const int *div, int degree, int *out) {
+static void ecc_remainder(const int *data, int n, const int *div, int degree, int *out) {
   for (int i = 0; i < degree; i++) out[i] = 0;
   for (int k = 0; k < n; k++) {
     int factor = data[k] ^ out[0];
@@ -96,7 +96,7 @@ static int codewords(const unsigned char *bytes, int len, int version, int *resu
     memcpy(blocks[i], data + at, (size_t)n * sizeof(int));
     at += n;
     int ecc[32];
-    remainder(blocks[i], n, div, ecc_len, ecc);
+    ecc_remainder(blocks[i], n, div, ecc_len, ecc);
     if (i < short_blocks) blocks[i][n++] = 0;
     memcpy(blocks[i] + n, ecc, (size_t)ecc_len * sizeof(int));
   }
