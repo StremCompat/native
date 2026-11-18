@@ -25,7 +25,7 @@ void platform_fatal(const char *message) {
   for (const char *c = message; *c && n < sizeof payload - 4; c++)
     if (*c != '"' && *c != '\\' && (unsigned char)*c >= 32) payload[n++] = *c;
   snprintf(payload + n, sizeof payload - n, "\"}");
-  luna_call("luna://com.webos.notification/createToast", payload, NULL, NULL);
+  luna_call("luna://com.webos.notification/createToast", payload, NULL, NULL, NULL);
   for (int i = 0; i < 20; i++) {
     luna_poll();
     usleep(50000);
@@ -87,7 +87,7 @@ static bool language_came(LSHandle *sh, LSMessage *msg, void *ctx) {
 void platform_language(char *out, int size) {
   LSMessageToken token;
   out[0] = 0;
-  if (!luna_call("luna://com.webos.settingsservice/getSystemSettings", "{\"keys\":[\"localeInfo\"]}", language_came, &token))
+  if (!luna_call("luna://com.webos.settingsservice/getSystemSettings", "{\"keys\":[\"localeInfo\"]}", language_came, NULL, &token))
     return;
   /* asked once at the start; the answer comes in a moment */
   for (int i = 0; i < 40 && !language_answered; i++) {
@@ -165,7 +165,7 @@ void platform_run_server(void) {
 void platform_start_server(void) {
   LSMessageToken token;
   snprintf(service_note, sizeof service_note, "service asked, no answer");
-  if (!luna_call("luna://" SC_SERVICE_ID "/start", "{}", start_answered, &token))
+  if (!luna_call("luna://" SC_SERVICE_ID "/start", "{}", start_answered, NULL, &token))
     snprintf(service_note, sizeof service_note, "service call refused: %s", luna_error());
   luna_poll();
 }
@@ -187,7 +187,7 @@ static bool install_answered(LSHandle *sh, LSMessage *msg, void *ctx) {
 void platform_install_update(void (*done)(const char *error)) {
   LSMessageToken token;
   install_done = done;
-  if (!luna_call("luna://" SC_SERVICE_ID "/install", "{}", install_answered, &token)) done(luna_error());
+  if (!luna_call("luna://" SC_SERVICE_ID "/install", "{}", install_answered, NULL, &token)) done(luna_error());
 }
 
 /* every font file under the folder; the text module opens one only when a character needs it */

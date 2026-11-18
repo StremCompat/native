@@ -104,10 +104,15 @@ int main(int argc, char **argv) {
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
   SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-#if defined(__EMSCRIPTEN__) || defined(__ANDROID__)
-  /* the video plays under the window: it needs see-through pixels */
+  /* the video plays on the TV's plane under the window (webOS, Samsung, Android): the window needs
+     see-through pixels, or the player's clear paints black over the picture. 8 bits a colour,
+     nothing the 2D drawing does not use. */
+  SDL_GL_SetAttribute(SDL_GL_RED_SIZE, 8);
+  SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, 8);
+  SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE, 8);
   SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, 8);
-#endif
+  SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 0);
+  SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 0);
   Uint32 flags = SDL_WINDOW_OPENGL | (shot ? SDL_WINDOW_HIDDEN : platform_window_flags());
   /* a whole-screen window takes the screen's own size (720p or 1080p panels alike) */
   SDL_DisplayMode screen;

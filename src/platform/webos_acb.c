@@ -12,6 +12,7 @@
 #include <pthread.h>
 #include <stdio.h>
 #include <string.h>
+#include <strings.h>
 #include <unistd.h>
 
 #include "util.h"
@@ -146,9 +147,12 @@ static void *bind_steps(void *arg) {
   if (!still(mine)) return NULL;
   if (api.set_video_data) {
     /* the TV's display service wants the media named in the data ("context"), and the real
-       picture; a standard-range video sends its colour blocks empty */
+       picture; a standard-range video sends its colour blocks empty. The HDR kinds it knows are
+       HDR10 and Dolby Vision, anything else goes as none; an unknown bit rate as a plausible one. */
     const char *sei = webos_major() < 5 ? "mediaSei" : "sei", *vui = webos_major() < 5 ? "mediaVui" : "vui";
     pthread_mutex_lock(&lock);
+    const char *hdr = !strcasecmp(picture.hdr, "HDR10") || !strcasecmp(picture.hdr, "DolbyVision") ? picture.hdr : "none";
+    double bits = picture.bit_rate > 0 ? picture.bit_rate : 8000000;
     snprintf(json, sizeof json,
              "{\"context\":\"%s\",\"content\":\"movie\",\"video\":{\"bitRate\":%.0f,\"frameRate\":%.3f,"
              "\"hdrType\":\"%s\",\"width\":%d,\"height\":%d,\"scanType\":\"VIDEO_PROGRESSIVE\",\"path\":\"network\","
@@ -159,7 +163,7 @@ static void *bind_steps(void *arg) {
              "\"minDisplayMasteringLuminance\":0,\"maxDisplayMasteringLuminance\":0,\"maxContentLightLevel\":0,"
              "\"maxPicAverageLightLevel\":0},\"%s\":{\"transferCharacteristics\":2,\"colorPrimaries\":2,"
              "\"matrixCoeffs\":2,\"videoFullRangeFlag\":false}}}",
-             id, picture.bit_rate, picture.fps, picture.hdr, picture.width, picture.height, sei, vui);
+             id, bits, picture.fps, hdr, picture.width, picture.height, sei, vui);
     pthread_mutex_unlock(&lock);
     api.set_video_data(handle, json, &task);
   }
@@ -208,11 +212,10 @@ void acb_set_playing(int playing) {
   api.set_state(handle, APP_FOREGROUND, playing ? PLAY_PLAYING : PLAY_PAUSED, &task);
 }
 
+/* the video ended: a bind still on its way stops. The control block itself stays for the next
+   video: the library refuses to be initialised a second time in the same app, so a new one would
+   leave the next picture black. */
 void acb_release(void) {
   ++session;
   bound = 0;
-  if (!handle) return;
-  if (api.finalize) api.finalize(handle);
-  if (api.destroy) api.destroy(handle);
-  handle = 0;
 }

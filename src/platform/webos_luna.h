@@ -15,8 +15,8 @@ int luna_ready(void);
 const char *luna_error(void);
 /* the name the app took on the bus, for the reports */
 const char *luna_name(void);
-/* a call; with reply NULL one answer is asked and ignored */
-int luna_call(const char *uri, const char *payload, LSFilterFunc reply, LSMessageToken *token);
+/* a call; with reply NULL one answer is asked and ignored. ctx comes back to the reply. */
+int luna_call(const char *uri, const char *payload, LSFilterFunc reply, void *ctx, LSMessageToken *token);
 void luna_cancel(LSMessageToken token);
 /* the bus's news, once per frame */
 void luna_poll(void);

@@ -37,16 +37,20 @@ static player_state status = PLAYER_IDLE;
 static int buffering, ntracks, audio_at, reloads, audio_failed, hdr;
 static double position, duration, start_at;
 static double reported_at; /* when the position last came, to move it on between reports */
+static double last_time = -1; /* the position the service reported last */
 static double seek_to = -1, seek_asked_at, seek_sent_at, seek_retry_at;
 static int seek_tries;
 static player_track tracks[PLAYER_MAX_TRACKS];
 static LSMessageToken subscription, saver;
+/* each load is numbered: the answer to one already left (closed, or another video asked) frees
+   its pipeline, which would otherwise hold the TV's decoder and stop the next video */
+static unsigned loads;
 
 /* ---------- the bus ---------- */
 static int call(const char *method, const char *payload, LSFilterFunc reply, LSMessageToken *token) {
   char uri[128];
   snprintf(uri, sizeof uri, MEDIA "%s", method);
-  if (luna_call(uri, payload, reply, token)) return 1;
+  if (luna_call(uri, payload, reply, NULL, token)) return 1;
   snprintf(error, sizeof error, "%s", luna_error());
   return 0;
 }
@@ -70,7 +74,7 @@ static bool on_saver(LSHandle *sh, LSMessage *msg, void *ctx) {
     char payload[200];
     snprintf(payload, sizeof payload, "{\"clientName\":\"%s\",\"ack\":false,\"timestamp\":%.0f}", SC_APP_ID,
              json_num(stamp, 0));
-    luna_call("luna://com.webos.service.tvpower/power/responseScreenSaverRequest", payload, NULL, NULL);
+    luna_call("luna://com.webos.service.tvpower/power/responseScreenSaverRequest", payload, NULL, NULL, NULL);
   }
   json_free(d);
   return true;
@@ -125,6 +129,15 @@ static bool on_event(LSHandle *sh, LSMessage *msg, void *ctx) {
   if (t >= 0 && seek_to < 0 && now_ms() - seek_sent_at > SEEK_QUIET_MS) {
     position = t;
     reported_at = now_ms();
+  }
+  /* the time moving is the video playing, whether or not "playing" and "bufferingEnd" came (some
+     firmware leaves them out): the cover and the dimming would otherwise hide the picture */
+  if (t >= 0) {
+    if (last_time >= 0 && t > last_time && t - last_time < 5000) {
+      buffering = 0;
+      if (status == PLAYER_LOADING) status = PLAYER_PLAYING;
+    }
+    last_time = t;
   }
   if (json_get(e, "seekDone")->type != J_NULL) seek_sent_at = 0, seek_tries = 0;
   const jval *source = json_get(e, "sourceInfo");
@@ -190,11 +203,16 @@ static bool on_event(LSHandle *sh, LSMessage *msg, void *ctx) {
 
 static bool on_loaded(LSHandle *sh, LSMessage *msg, void *ctx) {
   (void)sh;
-  (void)ctx;
   const char *text = LSMessageGetPayload(msg);
   jdoc *d = text ? json_parse(text, strlen(text)) : NULL;
   const char *id = json_str(json_get(json_root(d), "mediaId"), NULL);
-  if (id && json_bool(json_get(json_root(d), "returnValue"), 0)) {
+  if ((unsigned)(uintptr_t)ctx != loads) {
+    if (id) {
+      char payload[200];
+      snprintf(payload, sizeof payload, "{\"mediaId\":\"%s\"}", id);
+      call("unload", payload, NULL, NULL);
+    }
+  } else if (id && json_bool(json_get(json_root(d), "returnValue"), 0)) {
     snprintf(media_id, sizeof media_id, "%s", id);
     char payload[200];
     snprintf(payload, sizeof payload, "{\"connectionId\":\"%s\"}", media_id);
@@ -246,6 +264,7 @@ static void choose_window(void) {
 /* ---------- the player ---------- */
 static int load(double from_ms) {
   status = PLAYER_LOADING;
+  last_time = -1;
   position = from_ms;
   reported_at = now_ms();
   duration = 0;
@@ -265,13 +284,15 @@ static int load(double from_ms) {
   sb_add_json_str(&p, window_id);
   sb_add(&p, "}}}");
   LSMessageToken token;
-  int ok = call("load", p.s, on_loaded, &token);
+  int ok = luna_call(MEDIA "load", p.s, on_loaded, (void *)(uintptr_t)++loads, &token);
+  if (!ok) snprintf(error, sizeof error, "%s", luna_error());
   sb_free(&p);
   if (!ok) status = PLAYER_FAILED;
   return ok ? 0 : -1;
 }
 
 static void let_go(void) {
+  loads++; /* a load still unanswered is no longer wanted */
   if (media_id[0]) {
     simple("unload");
     luna_cancel(subscription);
@@ -300,7 +321,7 @@ int player_open(const char *address, double start_ms) {
   snprintf(url, sizeof url, "%s", address ? address : "");
   if (!saver)
     luna_call("luna://com.webos.service.tvpower/power/registerScreenSaverRequest",
-              "{\"subscribe\":true,\"clientName\":\"" SC_APP_ID "\"}", on_saver, &saver);
+              "{\"subscribe\":true,\"clientName\":\"" SC_APP_ID "\"}", on_saver, NULL, &saver);
   return load(start_ms);
 }
 

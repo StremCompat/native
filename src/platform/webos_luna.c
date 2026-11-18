@@ -63,12 +63,12 @@ static LSHandle *handle_for(const char *uri) {
   return strncmp(uri, "luna://com.webos.media/", 23) ? bus : media_handle();
 }
 
-int luna_call(const char *uri, const char *payload, LSFilterFunc reply, LSMessageToken *token) {
+int luna_call(const char *uri, const char *payload, LSFilterFunc reply, void *ctx, LSMessageToken *token) {
   LSError err;
   if (!luna_ready()) return 0;
   LSHandle *h = handle_for(uri);
   LSErrorInit(&err);
-  int ok = reply ? LSCall(h, uri, payload, reply, NULL, token, &err)
+  int ok = reply ? LSCall(h, uri, payload, reply, ctx, token, &err)
                  : LSCallOneReply(h, uri, payload, NULL, NULL, NULL, &err);
   if (!ok) {
     snprintf(error, sizeof error, "%s: %s", uri, err.message ? err.message : "refused");
