@@ -8,6 +8,8 @@
 
 #include "api.h"
 #include "nav.h"
+#include "net.h"
+#include "qr.h"
 #include "screens.h"
 #include "text.h"
 #include "ui.h"
@@ -87,6 +89,62 @@ static void run(int live) {
   if (live) sb_add(&p, "&live=1");
   api_get(p.s, answered, (void *)(intptr_t)gen);
   sb_free(&p);
+}
+
+/* ---------- typing on the phone: the TV's page for a line of text (server/phone-link.js), asked
+   every two seconds while Search shows; what comes searches as if typed and submitted ---------- */
+#define PHONE_POLL_MS 2000.0
+static char phone_qr[QR_MAX_SIZE * QR_MAX_SIZE + 1];
+static int phone_size, phone_asking, phone_gen;
+static double phone_polled;
+
+static void phone_started(net_reply *r, void *user) {
+  if ((intptr_t)user != phone_gen) return;
+  jdoc *d = r->status == 200 && r->body ? json_parse(r->body, r->len) : NULL;
+  const jval *rows = json_get(json_root(d), "qr");
+  int n = json_len(rows);
+  phone_size = 0;
+  if (n > 0 && n <= QR_MAX_SIZE) {
+    for (int i = 0; i < n; i++) memcpy(phone_qr + i * n, json_str(json_at(rows, i), ""), (size_t)n);
+    phone_qr[n * n] = 0;
+    phone_size = n;
+  }
+  json_free(d);
+}
+
+static void phone_start(void) {
+  phone_size = 0;
+  net_request("/app/phone/start", "{\"kind\":\"text\"}", NET_HIGH, NULL, phone_started, (void *)(intptr_t)++phone_gen);
+}
+
+static void run(int live);
+
+static void phone_came(const jval *answer, void *user) {
+  if ((intptr_t)user != phone_gen) return;
+  phone_asking = 0;
+  const char *value = json_str(json_get(answer, "value"), NULL);
+  if (value && *value) {
+    snprintf(query, sizeof query, "%s", value);
+    run(0);
+    phone_start();
+  } else if (json_bool(json_get(answer, "closed"), 0)) {
+    phone_size = 0;
+  }
+}
+
+static void phone_tick(double t) {
+  if (!phone_size || phone_asking || t - phone_polled < PHONE_POLL_MS) return;
+  phone_polled = t;
+  phone_asking = 1;
+  api_get("/app/phone/poll", phone_came, (void *)(intptr_t)phone_gen);
+}
+
+static void draw_phone(void) {
+  if (!phone_size) return;
+  float box = 170, x = SC_DESIGN_W - 48 - box, y = SC_DESIGN_H - 60 - box;
+  ui_qr(phone_qr, phone_size, x, y, box);
+  const char *hint = tx("phoneSearchHint");
+  text_draw_wrap(hint, x - 380, y + box / 2 - 30, 350, 22, W_REGULAR, C_TEXT(0.72f), 2, 30);
 }
 
 static void press(void) {
@@ -232,9 +290,11 @@ static void frame(double t, float dt) {
     if (strcmp(query, asked)) run(1);
   }
   draw_keys();
+  phone_tick(t);
   if (!query[0]) {
     text_draw(tx("searchHint"), SIDE_X, TOP + 22, 25, W_REGULAR, C_TEXT(0.72f));
     draw_recent();
+    draw_phone();
   } else if (searching) {
     text_draw(tx("searching"), SIDE_X, TOP + 22, 25, W_REGULAR, C_TEXT(0.72f));
   } else if (!nrows && empty[0]) {
@@ -247,6 +307,7 @@ static void frame(double t, float dt) {
 
 static void enter(void) {
   if (!asked[0] && !nrecent) run(1); /* the recent searches */
+  phone_start();
 }
 
 const screen search_screen = {enter, key, frame, text, 0};
