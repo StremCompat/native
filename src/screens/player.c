@@ -115,6 +115,9 @@ static void format_time(char *out, size_t size, double ms) {
 }
 
 /* ---------- what is reported to the server ---------- */
+/* this playback's own id for the server, which ignores reports arriving after its leave */
+static char play_id[32];
+
 static void report(const char *event) {
   double at = player_position(), d = player_duration();
   if (d <= 0) at = seen_at, d = seen_len;
@@ -138,7 +141,7 @@ static void report(const char *event) {
     sb_add(&b, ",\"next\":");
     sb_add_json_str(&b, info.next);
   }
-  sb_addf(&b, ",\"time\":%.0f,\"duration\":%.0f,\"event\":", at, d);
+  sb_addf(&b, ",\"play\":\"%s\",\"time\":%.0f,\"duration\":%.0f,\"event\":", play_id, at, d);
   sb_add_json_str(&b, event);
   sb_add(&b, "}");
   api_post("/app/progress", b.s);
@@ -251,16 +254,16 @@ static void started(const jval *answer, void *user) {
   const jval *in = json_get(answer, "info");
   if ((intptr_t)user != gen) return;
   if (in->type != J_OBJ || !json_str(json_get(in, "URL"), NULL)) {
-    if (resuming) {
-      /* the last source is gone from the server: choose again */
-      app_back();
-      sources_open(want_type, want_id, want_vid, NULL);
-    } else {
-      ui_toast(txp("sourceFailed", NULL));
-    }
+    /* the source could not be had (the last one is gone from the server, or this one failed):
+       the sources of the same video again, instead of a cover that never goes */
+    if (!resuming) ui_toast(txp("sourceFailed", NULL));
+    app_back();
+    sources_open(want_type, want_id, want_vid, NULL);
     return;
   }
   clear_info();
+  static unsigned plays;
+  snprintf(play_id, sizeof play_id, "%lx-%x", (unsigned long)time(NULL), ++plays);
   info.url = copy(json_get(in, "URL"));
   info.title = copy(json_get(in, "TITLE"));
   info.logo = copy(json_get(in, "LOGO"));

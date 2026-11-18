@@ -16,7 +16,10 @@ EM_JS(void, js_open, (const char *url, double start), {
     av.stop();
     av.close();
   } catch (e) {}
+  /* AVPlay is one for the whole app: news about a video opened before this one is dropped */
+  function mine() { return Module.scPlayer === p; }
   function fail(e) {
+    if (!mine()) return;
     p.state = 5;
     p.error = String((e && (e.name || e.message)) || e || "error");
   }
@@ -24,16 +27,28 @@ EM_JS(void, js_open, (const char *url, double start), {
     av.open(UTF8ToString(url));
     av.setDisplayRect(0, 0, 1920, 1080);
     av.setListener({
-      onbufferingstart: function() { p.buffering = 1; },
-      onbufferingcomplete: function() { p.buffering = 0; },
-      oncurrentplaytime: function(ms) { p.position = ms; },
-      onstreamcompleted: function() { p.state = 4; },
+      onbufferingstart: function() { if (mine()) p.buffering = 1; },
+      onbufferingcomplete: function() { if (mine()) p.buffering = 0; },
+      oncurrentplaytime: function(ms) { if (mine()) p.position = ms; },
+      onstreamcompleted: function() { if (mine()) p.state = 4; },
       onerror: fail
     });
     av.prepareAsync(function() {
-      if (start > 0) av.seekTo(start);
-      av.play();
-      p.state = 2;
+      if (!mine()) return;
+      /* the place to resume from; a source that refuses it plays from the start, it does not fail */
+      if (start > 0) {
+        try {
+          av.seekTo(start);
+        } catch (e) {
+          p.position = 0;
+        }
+      }
+      try {
+        av.play();
+        p.state = 2;
+      } catch (e) {
+        fail(e);
+      }
     }, fail);
   } catch (e) {
     fail(e);

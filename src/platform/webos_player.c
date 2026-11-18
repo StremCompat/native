@@ -273,6 +273,7 @@ static int load(double from_ms) {
   seek_to = -1;
   seek_sent_at = 0;
   seek_tries = 0;
+  seek_retry_at = 0; /* a retry belongs to the video that asked for it */
   loading_since = now_ms();
   snprintf(last_event, sizeof last_event, "load asked");
   ntracks = audio_at = 0;
@@ -293,6 +294,8 @@ static int load(double from_ms) {
 
 static void let_go(void) {
   loads++; /* a load still unanswered is no longer wanted */
+  seek_retry_at = 0;
+  seek_to = -1;
   if (media_id[0]) {
     simple("unload");
     luna_cancel(subscription);
