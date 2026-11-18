@@ -14,6 +14,7 @@
 #include "json.h"
 #include "net.h"
 #include "platform.h"
+#include "qr.h"
 #include "screens.h"
 #include "text.h"
 #include "ui.h"
@@ -71,6 +72,39 @@ static void key(app_key k) {
 static int portuguese(void) { return !strncmp(app_language(), "pt", 2); }
 #define T(pt, en) (portuguese() ? (pt) : (en))
 
+/* the repository its reports go to */
+#if defined(__EMSCRIPTEN__)
+#define REPORT_REPO "samsung"
+#elif defined(__ANDROID__)
+#define REPORT_REPO "android-tv"
+#else
+#define REPORT_REPO "webos"
+#endif
+
+static void centred(const char *s, float y, float box, float size, int weight, uint32_t color);
+
+/* A QR code a phone scans to open a bug report already filled in with what the screen says (no
+   keys or account in it), made here because the server is what failed */
+static void draw_report(const char *code, float y) {
+  static char modules[QR_MAX_SIZE * QR_MAX_SIZE + 1], made_for[300];
+  static int size;
+  if (strcmp(made_for, code)) {
+    snprintf(made_for, sizeof made_for, "%s", code);
+    sbuf url = {0};
+    sb_add(&url, "https://github.com/StremCompat/" REPORT_REPO "/issues/new?title=");
+    char title[120];
+    snprintf(title, sizeof title, "Native start: %.100s", code);
+    sb_add_url(&url, title);
+    size = qr_encode(url.s, modules);
+    sb_free(&url);
+  }
+  if (!size) return;
+  float box = 190;
+  ui_qr(modules, size, (SC_DESIGN_W - box) / 2, y, box);
+  centred(T("Escaneie com o celular para relatar o problema", "Scan with your phone to report it"), y + box + 14, 24, 15,
+          W_REGULAR, C_TEXT(0.5f));
+}
+
 static void centred(const char *s, float y, float box, float size, int weight, uint32_t color) {
   float w = text_width(s, size, weight);
   ui_line(s, (SC_DESIGN_W - w) / 2, y, box, size, weight, color);
@@ -120,6 +154,7 @@ static void frame(double t, float dt) {
     snprintf(code, sizeof code, "%s %s \xC2\xB7 %s \xC2\xB7 %s", stale ? "STALE_SERVICE" : "RUNTIME_START_TIMEOUT", APP_VERSION,
              platform_server_status(), server_note);
     centred(code, y + 164, 24, 15, W_REGULAR, C_TEXT(0.34f));
+    draw_report(code, y + 204);
     return;
   }
   centred(waited > 20000 ? T("Quase pronto\xE2\x80\xA6", "Almost ready\xE2\x80\xA6")

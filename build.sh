@@ -75,7 +75,7 @@ case "$TARGET" in
     mkdir -p "$OUT"
     for t in "$HERE"/tests/test_*.c; do
       name=$(basename "$t" .c)
-      "$ZIG" cc -target x86_64-windows-gnu $CFLAGS -I"$SDL/include/SDL2" "$t" "$HERE/src/core/json.c" "$HERE/src/core/util.c" \
+      "$ZIG" cc -target x86_64-windows-gnu $CFLAGS -I"$SDL/include/SDL2" "$t" "$HERE/src/core/json.c" "$HERE/src/core/util.c" "$HERE/src/core/qr.c" \
         "$SDL/lib/libSDL2.dll.a" -o "$OUT/$name.exe"
     done
     cp "$SDL/bin/SDL2.dll" "$OUT/"
