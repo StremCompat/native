@@ -18,6 +18,9 @@ void img_frame(double t);
    moments after it arrived. */
 const sc_tex *img_get(const char *url, int width, float *fade);
 
+/* how many pictures drawn since the last img_frame are still on their way (Home waits for them) */
+int img_waiting(void);
+
 /* the picture at this address could not be had (to show the title in its place) */
 int img_failed(const char *url, int width);
 

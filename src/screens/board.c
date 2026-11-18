@@ -467,9 +467,36 @@ static void home_key(app_key k) {
   B = &home_board;
   key(k);
 }
+/* The first time, Home appears whole: a splash over it until its first rows and their pictures
+   came (cards no longer pop in one by one), at most SPLASH_MAX_MS */
+#define SPLASH_MAX_MS 2500.0
+#define SPLASH_FADE_MS 300.0
+static double splash_from = -1, splash_done = -1;
+static sc_tex splash_logo;
+
+static int first_rows_ready(void) {
+  if (!B->loaded) return 0;
+  for (int i = 0, shown_rows = 0; i < B->nrows && shown_rows < 2; i++) {
+    if (!B->rows[i].answered) return 0;
+    if (B->rows[i].n) shown_rows++;
+  }
+  return 1;
+}
+
+static void draw_splash(double t) {
+  if (splash_from < 0) splash_from = t;
+  if (splash_done < 0 && ((first_rows_ready() && !img_waiting()) || t - splash_from > SPLASH_MAX_MS)) splash_done = t;
+  float a = splash_done >= 0 ? 1 - (float)((t - splash_done) / SPLASH_FADE_MS) : 1;
+  if (a <= 0) return;
+  gfx_rect(0, 0, SC_DESIGN_W, SC_DESIGN_H, 0, SC_RGBA(10, 10, 11, (int)(255 * a)));
+  if (!splash_logo.id) splash_logo = img_load_file(app_asset_dir("logo.png"), 0);
+  if (splash_logo.id) gfx_image(&splash_logo, (SC_DESIGN_W - 120) / 2.0f, (SC_DESIGN_H - 120) / 2.0f, 120, 120, 0, a, 0);
+}
+
 static void home_frame(double t, float dt) {
   B = &home_board;
   frame(t, dt);
+  draw_splash(t);
 }
 static void library_key(app_key k) {
   B = &library_board;

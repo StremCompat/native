@@ -18,10 +18,18 @@
 #define ENTRIES 512 /* far more than a screen shows; when full, the one drawn longest ago goes */
 #define FADE_MS 220.0
 #define RETRY_MS 3000.0 /* a server that did not answer is asked again after this */
+/* decoded pictures become textures a few per frame, those drawn most recently first: many
+   arriving together used to be uploaded in one frame, which stuttered */
+#define UPLOADS_PER_FRAME 3
 /* every so often the system's free memory is looked at; under this, half the pictures not on
    screen go, before the TV runs short (the video, the server and FFmpeg share it) */
 #define MEMORY_CHECK_MS 2000.0
 #define LOW_MEMORY_MB 160
+
+typedef struct {
+  unsigned char *px;
+  int w, h;
+} decoded;
 
 typedef enum { LOADING, READY, FAILED } state;
 
@@ -31,16 +39,13 @@ typedef struct {
   state st;
   int unreachable; /* failed because the server did not answer, not because of the picture */
   sc_tex tex;
+  decoded *waiting; /* decoded, its texture not made yet */
   double ready_at, used_at;
 } entry;
 
-typedef struct {
-  unsigned char *px;
-  int w, h;
-} decoded;
-
 static entry entries[ENTRIES];
 static size_t budget, held;
+static int misses; /* pictures asked this frame and not there yet (img_waiting) */
 static double clock_now, memory_checked;
 static int skip_fades;
 
@@ -64,7 +69,14 @@ static entry *find(const char *key) {
   return NULL;
 }
 
+static void free_decoded(decoded *d) {
+  if (!d) return;
+  free(d->px);
+  free(d);
+}
+
 static void forget(entry *e) {
+  free_decoded(e->waiting);
   if (e->st == READY) held -= tex_bytes(&e->tex);
   gfx_texture_free(&e->tex);
   free(e->key);
@@ -128,18 +140,16 @@ static void decode(net_reply *r, void *user) {
   r->result = d;
 }
 
-/* main thread: pixels into a texture. The entry is found again by its key, since it may have
-   been given to another picture while this one was on its way. */
+/* main thread: the pixels wait for their texture (img_frame makes a few per frame). The entry is
+   found again by its key, since it may have been given to another picture meanwhile. */
 static void arrived(net_reply *r, void *user) {
   char *key = user;
   decoded *d = r->result;
   entry *e = find(key);
-  if (e && e->st == LOADING) {
+  if (e && e->st == LOADING && !e->waiting) {
     if (d) {
-      e->tex = gfx_texture(d->w, d->h, d->px, 0);
-      e->st = READY;
-      e->ready_at = clock_now;
-      held += tex_bytes(&e->tex);
+      e->waiting = d;
+      d = NULL;
     } else {
       e->st = FAILED;
       /* no answer, or "not made yet" (a seek preview): asked again in a moment */
@@ -147,11 +157,26 @@ static void arrived(net_reply *r, void *user) {
       e->ready_at = clock_now;
     }
   }
-  if (d) {
-    free(d->px);
-    free(d);
-  }
+  free_decoded(d);
   free(key);
+}
+
+/* the waiting picture drawn most recently, or NULL */
+static entry *next_upload(void) {
+  entry *best = NULL;
+  for (int i = 0; i < ENTRIES; i++)
+    if (entries[i].waiting && (!best || entries[i].used_at > best->used_at)) best = &entries[i];
+  return best;
+}
+
+static void upload(entry *e) {
+  decoded *d = e->waiting;
+  e->waiting = NULL;
+  e->tex = gfx_texture(d->w, d->h, d->px, 0);
+  e->st = READY;
+  e->ready_at = clock_now;
+  held += tex_bytes(&e->tex);
+  free_decoded(d);
 }
 
 static void load(entry *e) {
@@ -215,15 +240,22 @@ const sc_tex *img_get(const char *url, int width, float *fade) {
     load(e);
   }
   e->used_at = clock_now;
+  if (e->st == LOADING) misses++;
   if (e->st != READY) return NULL;
   if (fade && skip_fades) *fade = 1;
   else if (fade) *fade = ease_out(clampf((float)((clock_now - e->ready_at) / FADE_MS), 0, 1));
   return &e->tex;
 }
 
+int img_waiting(void) { return misses; }
+
 void img_frame(double t) {
   double last_frame = clock_now;
   clock_now = t;
+  misses = 0;
+  entry *e;
+  /* screenshots take every picture at once, so each run looks the same */
+  for (int n = 0; (skip_fades || n < UPLOADS_PER_FRAME) && (e = next_upload()); n++) upload(e);
   /* the pictures not drawn for the longest time go until the rest fits the budget, or half of what
      is held when the system runs low */
   size_t keep = budget;
