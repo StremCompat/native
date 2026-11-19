@@ -131,7 +131,7 @@ int main(int argc, char **argv) {
   app_stage = "fonts";
   if (text_init(app_asset_dir("fonts"))) return fail("fonts");
   platform_add_fonts();
-  net_init(port, 3);
+  net_init(port, 0);
   img_init(IMG_BUDGET);
   app_stage = "first screen";
   if (app_start()) return fail("first screen");

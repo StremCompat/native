@@ -17,13 +17,18 @@ typedef int sock_t;
 #include "net.h"
 
 #include <SDL.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "util.h"
 
 #define TIMEOUT_S 20
-#define MAX_WORKERS 4 /* and the slow lane's own */
+/* Each lane has workers of its own, so the screens' data never waits behind pictures (whose workers
+   also decode them) or behind a slow addon: with three shared workers, a Home's catalogs queued
+   behind its covers and backdrops on a TV's processor. */
+static const int LANE_WORKERS[3] = {4, 3, 2}; /* NET_HIGH (the screens' data), NET_LOW (pictures), NET_SLOW */
+#define MAX_WORKERS 9
 
 typedef struct job job;
 struct job {
@@ -39,7 +44,7 @@ static int port;
 static SDL_mutex *lock;
 static SDL_cond *wake;
 static job *queue[3], *finished; /* waiting by lane (net.h); answered, for net_poll */
-static SDL_Thread *workers[MAX_WORKERS + 1];
+static SDL_Thread *workers[MAX_WORKERS];
 static int nworkers, stopping, pending;
 
 static void push(job **list, job *j) {
@@ -119,20 +124,20 @@ done:
   parse_reply(&raw, r);
 }
 
-/* the slow lane's worker takes only its own requests; the others take the screens' data, then
-   pictures */
-static job *next_job(int slow) {
-  if (slow) return pop(&queue[NET_SLOW]);
-  job *j = pop(&queue[NET_HIGH]);
-  return j ? j : pop(&queue[NET_LOW]);
+/* a worker takes only its lane's requests; the screens' data, when its own lane is idle, can take
+   a picture's, never the other way round */
+static job *next_job(int lane) {
+  job *j = pop(&queue[lane]);
+  if (!j && lane == NET_HIGH) j = pop(&queue[NET_LOW]);
+  return j;
 }
 
 static int worker(void *arg) {
-  int slow = arg != NULL;
+  int lane = (int)(intptr_t)arg;
   for (;;) {
     SDL_LockMutex(lock);
     job *j = NULL;
-    while (!stopping && !(j = next_job(slow))) SDL_CondWait(wake, lock);
+    while (!stopping && !(j = next_job(lane))) SDL_CondWait(wake, lock);
     SDL_UnlockMutex(lock);
     if (!j) return 0;
     fetch(j->path, j->body, &j->reply);
@@ -151,10 +156,11 @@ int net_init(int server_port, int nthreads) {
   port = server_port;
   lock = SDL_CreateMutex();
   wake = SDL_CreateCond();
-  if (nthreads > MAX_WORKERS) nthreads = MAX_WORKERS;
-  for (nworkers = 0; nworkers < nthreads; nworkers++)
-    workers[nworkers] = SDL_CreateThread(worker, "net", NULL);
-  workers[nworkers++] = SDL_CreateThread(worker, "net-slow", (void *)1);
+  (void)nthreads;
+  static const char *names[3] = {"net-data", "net-pictures", "net-slow"};
+  for (int lane = 0; lane < 3; lane++)
+    for (int i = 0; i < LANE_WORKERS[lane]; i++)
+      workers[nworkers++] = SDL_CreateThread(worker, names[lane], (void *)(intptr_t)lane);
   return 0;
 }
 
@@ -187,7 +193,7 @@ void net_request(const char *path, const char *body, int priority, net_work_fn w
   SDL_LockMutex(lock);
   push(&queue[priority == NET_LOW || priority == NET_SLOW ? priority : NET_HIGH], j);
   pending++;
-  /* every worker wakes: only the slow one takes a slow request, and only the others the rest */
+  /* every worker wakes: each takes only what its lane (net.h) allows */
   SDL_CondBroadcast(wake);
   SDL_UnlockMutex(lock);
 }

@@ -154,6 +154,8 @@ void platform_run_server(void) {
     }
     if (chdir(dir) == 0) {
       if (!getenv("HOME")) setenv("HOME", "/home/root", 1);
+      /* as launch.js does: more of Node's helper threads for name lookups and disk reads */
+      setenv("UV_THREADPOOL_SIZE", "16", 0);
       execl(node, node, "--max_semi_space_size=2", "local-server.js", (char *)NULL);
     }
     _exit(127);
