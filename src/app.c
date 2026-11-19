@@ -81,9 +81,12 @@ void app_quit(void) { quit = 1; }
 /* when a key last came, for the screensaver; a key while it shows only ends it */
 static double last_key_at = -1;
 
+static void hide_cursor(void);
+
 static void on_key(app_key k) {
   if (k == K_NONE) return;
   last_key_at = last_frame;
+  if (k != K_OK && k != K_MENU) hide_cursor();
   if (saver_active()) {
     saver_stop();
     return;
@@ -107,7 +110,46 @@ static int is_ok(const SDL_Event *ev) {
 #define CLICK_ENTER_MS 250.0
 static double clicked_at = -1, button_down_at = -1;
 
-/* the Magic Remote's pointer: moving it puts the focus where it points, a click presses there */
+/* The Magic Remote's pointer. The arrows hide it at once, and only a real movement (more than the
+   hand's tremble) brings it back; while hidden, a press of its button is OK on the focus. The focus
+   follows it only once it rests (POINT_REST_MS), as the web does: following every tremble asked the
+   server for each card it crossed. Settings can turn it off. */
+#define POINT_REST_MS 120.0
+#define TREMBLE_PX 12
+static int pointer_on = 1, cursor_shown = 1, moved_x = -1, moved_y = -1, rest_x, rest_y;
+static Uint32 rest_window;
+static double moved_at = -1;
+
+void app_set_pointer(int on) {
+  pointer_on = on;
+  if (!on) SDL_ShowCursor(SDL_DISABLE), cursor_shown = 0;
+}
+
+static void hide_cursor(void) {
+  if (!cursor_shown) return;
+  cursor_shown = 0;
+  moved_at = -1;
+  SDL_ShowCursor(SDL_DISABLE);
+}
+
+/* a movement: 1 when the pointer is in use (shown, or brought back by it) */
+static int pointer_moved(int x, int y) {
+  if (!pointer_on) return 0;
+  if (!cursor_shown) {
+    if (moved_x >= 0 && abs(x - moved_x) < TREMBLE_PX && abs(y - moved_y) < TREMBLE_PX) return 0;
+    moved_x = x, moved_y = y;
+    if (moved_at < 0) {
+      /* the first movement after the arrows only marks where it was */
+      moved_at = last_frame;
+      return 0;
+    }
+    cursor_shown = 1;
+    SDL_ShowCursor(SDL_ENABLE);
+  }
+  moved_x = x, moved_y = y;
+  return 1;
+}
+
 static void pointer(Uint32 window_id, int px, int py, int press) {
   const screen *current = depth ? stack[depth - 1] : NULL;
   SDL_Window *window = SDL_GetWindowFromID(window_id);
@@ -126,17 +168,23 @@ void app_event(const SDL_Event *ev) {
       saver_stop();
       return;
     }
-    if (ev->type == SDL_MOUSEMOTION) pointer(ev->motion.windowID, ev->motion.x, ev->motion.y, 0);
-    else if (ev->button.button == SDL_BUTTON_LEFT) button_down_at = last_frame;
+    if (ev->type == SDL_MOUSEMOTION) {
+      if (pointer_moved(ev->motion.x, ev->motion.y))
+        rest_window = ev->motion.windowID, rest_x = ev->motion.x, rest_y = ev->motion.y, moved_at = last_frame;
+    } else if (ev->button.button == SDL_BUTTON_LEFT) button_down_at = last_frame;
   } else if (ev->type == SDL_MOUSEBUTTONUP && ev->button.button == SDL_BUTTON_LEFT && button_down_at >= 0) {
     int held = last_frame - button_down_at >= HOLD_MS;
     button_down_at = -1;
-    /* the focus goes where the button was let go, then the press or the hold */
-    pointer(ev->button.windowID, ev->button.x, ev->button.y, !held);
-    if (held) {
-      clicked_at = last_frame;
-      on_key(K_MENU);
+    clicked_at = last_frame;
+    if (!cursor_shown) {
+      /* hidden (or turned off): the button is OK, or the menu when held */
+      on_key(held ? K_MENU : K_OK);
+      return;
     }
+    /* the focus goes where the button was let go, then the press or the hold */
+    moved_at = -1;
+    pointer(ev->button.windowID, ev->button.x, ev->button.y, !held);
+    if (held) on_key(K_MENU);
   } else if (is_ok(ev) && last_frame - clicked_at < CLICK_ENTER_MS) {
     ok_down_at = -1;
   } else if (ev->type == SDL_TEXTINPUT && depth && stack[depth - 1]->text) {
@@ -187,6 +235,7 @@ void app_ready(void) {
   jdoc *d = json_parse(r.body, r.len);
   const jval *st = json_root(d);
   nav_show_calendar(strcmp(json_str(json_get(st, "provider"), ""), "nuvio") != 0);
+  app_set_pointer(json_bool(json_get(st, "pointer"), 1));
   if (!json_bool(json_get(st, "signedIn"), 0)) app_show(&login_screen);
   else if (!strcmp(json_str(json_get(st, "provider"), ""), "nuvio")) profiles_open(1);
   else app_show(&home_screen);
@@ -202,6 +251,10 @@ void app_frame(int w, int h, double t) {
   if (ok_down_at >= 0 && !ok_held && t - ok_down_at >= HOLD_MS) {
     ok_held = 1;
     on_key(K_MENU);
+  }
+  if (moved_at >= 0 && cursor_shown && t - moved_at >= POINT_REST_MS) {
+    moved_at = -1;
+    pointer(rest_window, rest_x, rest_y, 0);
   }
   gfx_begin(w, h, C_BG);
   platform_poll();

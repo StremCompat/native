@@ -19,6 +19,8 @@ void app_quit(void);
 int app_start(void);
 /* the server answers: the texts, then the first real screen (screens/boot.c) */
 void app_ready(void);
+/* Settings > Interface: the Magic Remote pointer on or off */
+void app_set_pointer(int on);
 /* the TV's language as "pt-BR", or "" */
 const char *app_language(void);
 

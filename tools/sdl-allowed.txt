@@ -33,3 +33,4 @@ SDL_SetHint
 SDL_UnlockMutex
 SDL_WaitThread
 SDL_free
+SDL_ShowCursor

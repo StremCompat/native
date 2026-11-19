@@ -140,6 +140,7 @@ static void changed(net_reply *r, void *user) {
 }
 
 static void store(const item *it, const char *value) {
+  if (!strcmp(it->k, "pointer")) app_set_pointer(strcmp(value, "off") != 0);
   sbuf b = {0};
   sb_add(&b, "{\"k\":");
   sb_add_json_str(&b, it->k);
