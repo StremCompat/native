@@ -4,7 +4,7 @@
 #   ./build.sh webos    LG webOS (ARM)
 #   ./build.sh tizen    Samsung Tizen: WebAssembly for the web package (Emscripten)
 #   ./build.sh android  the assets the Android TV app packs (the code is built by its Gradle project)
-#   ./build.sh test     the unit tests (Windows)
+#   ./build.sh test     builds and runs the unit tests (Windows)
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ZIG="${ZIG:-$HOME/stremcompat-build/tools/zig/zig}"
@@ -42,6 +42,13 @@ case "$TARGET" in
       $SRC "$HERE/src/platform/webos.c" "$HERE/src/platform/webos_player.c" "$HERE/src/platform/webos_luna.c" "$HERE/src/platform/webos_acb.c" \
       -Wl,--as-needed -lSDL2 -lluna-service2 -lglib-2.0 -ldl -lpthread -lm -o "$OUT/stremcompat"
     "$TC/bin/arm-webos-linux-gnueabi-strip" "$OUT/stremcompat"
+    # every SDL function imported must be in tools/sdl-allowed.txt (the TVs' SDL is old)
+    NEWER=$(comm -23 <("$TC/bin/arm-webos-linux-gnueabi-nm" -D --undefined-only "$OUT/stremcompat" | grep -o 'SDL_[A-Za-z0-9_]*' | sort -u) \
+      <(grep '^SDL_' "$HERE/tools/sdl-allowed.txt" | tr -d '\r' | sort -u))
+    if [ -n "$NEWER" ]; then
+      echo "SDL functions not checked against the TVs' SDL 2.0.1 (see tools/sdl-allowed.txt):" $NEWER >&2
+      exit 1
+    fi
     rm -rf "$OUT/assets"
     cp -r "$HERE/assets" "$OUT/assets"
     echo "built $OUT/stremcompat"
@@ -79,7 +86,12 @@ case "$TARGET" in
         "$SDL/lib/libSDL2.dll.a" -o "$OUT/$name.exe"
     done
     cp "$SDL/bin/SDL2.dll" "$OUT/"
-    echo "built tests in $OUT"
+    # a test with a <name>_expected.txt beside it reads it
+    for t in "$OUT"/test_*.exe; do
+      name=$(basename "$t" .exe)
+      (cd "$HERE/tests" && "$t" $( [ -f "${name#test_}_expected.txt" ] && echo "${name#test_}_expected.txt" ))
+    done
+    echo "tests passed"
     ;;
   *)
     echo "unknown target: $TARGET" >&2

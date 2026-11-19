@@ -104,6 +104,8 @@ static void clear_info(void) {
 
 static int shown(int b) {
   if (b == B_EPISODES) return info.type && !strcmp(info.type, "series");
+  /* a trailer or a channel has no title to find sources for */
+  if (b == B_SOURCES) return info.type && info.id;
   if (b == B_NEXT) return info.next != NULL;
   return 1;
 }
@@ -327,6 +329,9 @@ static void started(const jval *answer, void *user) {
 void player_play_address(const char *url, const char *title, int is_live) {
   gen++;
   clear_info();
+  /* no title behind it: a failure only goes back (key) */
+  free(want_type), free(want_id), free(want_vid);
+  want_type = want_id = want_vid = NULL;
   info.url = str_dup(url);
   info.title = title ? str_dup(title) : NULL;
   live = is_live;
@@ -399,11 +404,22 @@ void player_start(const char *type, const char *id, const char *vid, int seq) {
   app_push(&player_screen);
 }
 
+static void ignore_answer(const jval *answer, void *user) {
+  (void)answer, (void)user;
+}
+
+/* the video is left: the server stops what it made for it and lets a torrent go after a short grace
+   (a stalled torrent kept the TV's memory while another source played, webos#19) */
+static void close_video(void) {
+  player_close();
+  api_get("/release", ignore_answer, NULL);
+}
+
 /* on to the next episode: what was watched moves on, then its sources (the matching one plays) */
 static void go_next(void) {
   char *type = str_dup(info.type), *title = str_dup(info.id), *episode = str_dup(info.next);
   report("next");
-  player_close();
+  close_video();
   gen++;
   countdown_at = 0;
   app_back();
@@ -414,7 +430,7 @@ static void go_next(void) {
 static void leave(void) {
   list.open = 0;
   report("leave");
-  player_close();
+  close_video();
   gen++;
   app_back();
 }
@@ -636,7 +652,7 @@ static void choose(int id) {
   } else if (view == VIEW_SOURCES) {
     char *type = str_dup(info.type), *title = str_dup(info.id), *video = str_dup(info.vid ? info.vid : info.id);
     report("leave");
-    player_close();
+    close_video();
     app_back();
     player_start(type, title, video, source_seqs[id]);
     free(type), free(title), free(video);
@@ -677,11 +693,12 @@ static void key(app_key k) {
     return;
   }
   if (player_status() == PLAYER_FAILED) {
-    /* OK: another source of the same video */
-    if (k == K_OK) {
+    /* OK: another source of the same video; a trailer or a channel only goes back */
+    if (k == K_OK && !want_type) leave();
+    else if (k == K_OK) {
       char *type = str_dup(info.type ? info.type : want_type), *title = str_dup(info.id ? info.id : want_id),
            *video = str_dup(info.vid ? info.vid : want_vid);
-      player_close();
+      close_video();
       gen++;
       app_back();
       sources_open(type, title, video, NULL);

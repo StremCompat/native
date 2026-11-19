@@ -1,0 +1,35 @@
+# SDL functions the webOS build may import. The TVs run their own old libSDL2 (2.0.x on webOS 3
+# and 4.5); a function newer than that kills the app at launch with no message. Add one here only
+# after checking it exists in SDL 2.0.1 (the oldest the TVs ship).
+SDL_CondBroadcast
+SDL_CondWait
+SDL_CreateCond
+SDL_CreateMutex
+SDL_CreateThread
+SDL_CreateWindow
+SDL_Delay
+SDL_DestroyWindow
+SDL_GL_CreateContext
+SDL_GL_DeleteContext
+SDL_GL_GetCurrentWindow
+SDL_GL_GetDrawableSize
+SDL_GL_GetProcAddress
+SDL_GL_SetAttribute
+SDL_GL_SetSwapInterval
+SDL_GL_SwapWindow
+SDL_GetBasePath
+SDL_GetDesktopDisplayMode
+SDL_GetError
+SDL_GetPerformanceCounter
+SDL_GetPerformanceFrequency
+SDL_GetWindowFromID
+SDL_GetWindowSize
+SDL_Init
+SDL_LockMutex
+SDL_PollEvent
+SDL_Quit
+SDL_RWFromFile
+SDL_SetHint
+SDL_UnlockMutex
+SDL_WaitThread
+SDL_free
