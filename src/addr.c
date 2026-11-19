@@ -109,6 +109,26 @@ void addr_key(app_key k) {
   else if (r == KB_UP && nsug) on_suggest = 1;
 }
 
+/* where the keys were drawn last, for the pointer */
+static float keys_x, keys_y;
+#define SUGGEST_HIT 9000
+
+void addr_point(float x, float y, int press) {
+  if (x < 180 || x >= SC_DESIGN_W - 180 || y < 90 || y >= SC_DESIGN_H - 90) {
+    if (press) addr_close();
+    return;
+  }
+  int id = hit_at(x, y);
+  if (id >= SUGGEST_HIT && id - SUGGEST_HIT < nsug) {
+    on_suggest = 1;
+    sug_at = id - SUGGEST_HIT;
+    if (press) finish(sug_url[sug_at]);
+    return;
+  }
+  on_suggest = 0;
+  if (kb_point(&kb, x - keys_x, y - keys_y, press) == KB_DONE) finish(kb.text);
+}
+
 void addr_text(const char *utf8) {
   if (active && !on_suggest) kb_type(&kb, utf8);
 }
@@ -137,12 +157,14 @@ void addr_draw(void) {
       float w = text_width(sug_name[i], 20, W_SEMIBOLD) + 40;
       int f = on_suggest && i == sug_at;
       gfx_rect(sx, ky + 34, w, 48, 24, f ? C_WHITE : C_TEXT(0.12f));
+      hit_add(SUGGEST_HIT + i, sx, ky + 34, w, 48);
       ui_line(sug_name[i], sx + 20, ky + 34, 48, 20, W_SEMIBOLD, f ? C_BG : C_WHITE);
       sx += w + 12;
     }
     ky += 104;
   }
   kb_draw(&kb, fx, ky);
+  keys_x = fx, keys_y = ky;
   if (kind != ADDR_TEXT) {
     float qx = bx + bw - 46 - 360;
     if (qr) ui_qr(qr, qr_size, qx + 30, fy, 300);

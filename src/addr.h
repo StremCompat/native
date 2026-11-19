@@ -18,5 +18,7 @@ void addr_close(void);
 void addr_key(app_key k);
 void addr_text(const char *utf8);
 void addr_draw(void);
+/* the pointer over the open panel (press: a click) */
+void addr_point(float x, float y, int press);
 
 #endif

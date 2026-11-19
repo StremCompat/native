@@ -484,6 +484,7 @@ static void draw_buttons(float y) {
     if (main_button) w = 26 + 30 + 10 + label_w + 36;
     else w = focused ? 20 + 30 + 10 + label_w + 28 : 64;
     gfx_rect(x, y, w, 64, 32, back);
+    hit_add(ZONE_BUTTONS * 1000 + i, x, y, w, 64);
     float ix = main_button ? x + 26 : focused ? x + 20 : x + 17;
     ui_icon(main_button ? ICON_PLAY : (icon_id)icon, ix, y + 17, 30, fore);
     if (with_label) ui_line(a->label, ix + 40, y, 64, 26, W_BOLD, fore);
@@ -517,6 +518,7 @@ static void draw_controls(float y) {
     uint32_t back = focused ? C_WHITE : i == CTRL_LIST ? C_TEXT(0.14f) : C_TEXT(0.07f);
     uint32_t fore = focused ? SC_RGBA(12, 11, 17, 255) : i == CTRL_LIST ? C_WHITE : C_TEXT(0.72f);
     gfx_rect(x, y, w, 46, 23, back);
+    hit_add(ZONE_SEASONS * 1000 + i, x, y, w, 46);
     ui_line(labels[i], x + (w - tw) / 2, y, 46, 22, focused ? W_BOLD : W_REGULAR, fore);
     x += w + 10;
   }
@@ -566,6 +568,8 @@ static void draw_episodes(float y, float dt) {
     if (x + EP_W < 128) continue;
     if (x > SC_DESIGN_W) break;
     draw_episode(shown(i), x, y + 7, zone == ZONE_EPISODES && i == ep_at && !nav_has_focus());
+    float left = x < 128 ? 128 : x;
+    hit_add(ZONE_EPISODES * 1000 + i, left, y + 7, x + EP_W - left, EP_H);
   }
   gfx_pop_clip();
 }
@@ -622,4 +626,34 @@ static void frame(double t, float dt) {
 
 static void enter(void) {}
 
-const screen title_screen = {enter, key, frame, NULL, 0};
+/* The pointer: the rail, the episode keyboard and the marks menu first; then the button, control or
+   episode under it takes the focus, and a click presses it. */
+static void point(float x, float y, int press) {
+  if (nav_point(x, y, press) || !loaded) return;
+  if (jumping) {
+    float kw = 13 * 72 - 8;
+    if (kb_point(&jump, x - (SC_DESIGN_W - kw) / 2, y - (SC_DESIGN_H - 360), press) == KB_DONE) {
+      jumping = 0;
+      if (atoi(jump.text) > 0) jump_to(atoi(jump.text));
+    }
+    return;
+  }
+  if (marks.open) {
+    int chosen = menu_point(&marks, x, y, press);
+    if (chosen >= 0) {
+      marks.open = 0;
+      mark(chosen);
+    }
+    return;
+  }
+  int id = hit_at(x, y);
+  if (id < 0) return;
+  if (nav_has_focus()) nav_key(K_RIGHT);
+  zone = id / 1000;
+  if (zone == ZONE_BUTTONS) button = id % 1000;
+  else if (zone == ZONE_SEASONS) control = id % 1000;
+  else ep_at = id % 1000;
+  if (press) key(K_OK);
+}
+
+const screen title_screen = {enter, key, frame, NULL, 0, point};

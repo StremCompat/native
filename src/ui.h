@@ -57,13 +57,19 @@ typedef struct {
     int on, id;
   } items[MENU_MAX];
   int n, at, open;
+  /* where it was drawn last, for the pointer: its box, its first row and how many show */
+  float box_x, box_y, box_w, rows_y;
+  int first, shown;
 } menu;
 void menu_begin(menu *m, const char *title);
 void menu_add(menu *m, const char *label, int on, int id);
 /* Up and Down move; OK returns the chosen row's id; Back closes (-2); otherwise -1 */
 int menu_key(menu *m, int key);
+/* the pointer: over a row it takes the focus; a click (press) returns that row's id, and outside the
+   menu closes it (-2); otherwise -1 */
+int menu_point(menu *m, float x, float y, int press);
 /* x is its left edge, bottom where it ends */
-void menu_draw(const menu *m, float x, float bottom);
+void menu_draw(menu *m, float x, float bottom);
 float menu_height(const menu *m);
 
 /* where a row of cards stands so the focused one shows: it moves only once the focus nears
@@ -74,6 +80,13 @@ float ui_row_offset(int focused, float step, float width);
 void ui_qr(const char *modules, int size, float x, float y, float box);
 
 /* a short message at the top of the screen for a few seconds (any screen) */
+/* Areas the Magic Remote's pointer can press, recorded while the screen on top draws them: id is the
+   screen's own (zone * 1000 + index, for one), and the last drawn wins where they overlap */
+void hit_reset(void);
+void hit_add(int id, float x, float y, float w, float h);
+/* the id of the area at (x, y), or -1 */
+int hit_at(float x, float y);
+
 void ui_toast(const char *text);
 void ui_draw_toast(double t);
 
@@ -103,6 +116,7 @@ void ui_tile(const card *c, float x, float y, float w, float h, int focused);
    letters) and its name under the picture; the width its shape takes */
 void ui_folder_tile(const card *c, float x, float y, int focused);
 float ui_folder_width(const card *c);
+float ui_folder_height(const card *c);
 /* the name over the bottom of a poster card (.titlelabel), for rows that name their titles */
 void ui_card_name(const card *c, float x, float y, int focused);
 

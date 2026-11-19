@@ -15,6 +15,7 @@
 #include "ui.h"
 #include "util.h"
 
+#define FEATURED_HIT 1000 /* the pointer's ids of the featured button and its dots */
 #define ROWS_TOP 396.0f      /* #rowsClip */
 #define ROWS_TOP_FEATURED 836.0f
 #define ROW_LEFT 176.0f
@@ -340,11 +341,13 @@ static void draw_hero(int featured) {
   const char *label = tx("seeDetails");
   float bw = text_width(label, 26, W_BOLD) + 72;
   gfx_rect(x, y, bw, 64, 32, nav_has_focus() ? C_TEXT(0.16f) : C_WHITE);
+  hit_add(FEATURED_HIT, x, y, bw, 64);
   ui_line(label, x + 36, y, 64, 26, W_BOLD, nav_has_focus() ? C_WHITE : C_BG);
   float dx = 1676, dy = y + 64 - 27 - 10;
   for (int i = 0; i < featured_count(); i++) {
     float dw = i == B->featured_at ? 30 : 10;
     gfx_rect(dx, dy, dw, 10, 5, i == B->featured_at ? C_WHITE : C_TEXT(0.35f));
+    hit_add(FEATURED_HIT + 1 + i, dx - 4, dy - 12, dw + 8, 34);
     dx += dw + 8;
   }
 }
@@ -512,5 +515,51 @@ static void library_frame(double t, float dt) {
   }
 }
 
-const screen home_screen = {home_enter, home_key, home_frame, NULL, 0};
-const screen library_screen = {library_enter, library_key, library_frame, NULL, 0};
+static void point(float x, float y, int press) {
+  /* nothing under the splash is clickable yet */
+  if (B == &home_board && splash_done < 0) return;
+  if (nav_point(x, y, press) || x < ROW_LEFT) return;
+  /* the featured title's button opens it, a dot shows that title (only clicks: the focus moving up
+     to it would move Home under the pointer) */
+  int id = hit_at(x, y);
+  if (id >= FEATURED_HIT) {
+    if (!press) return;
+    if (nav_has_focus()) nav_key(K_RIGHT);
+    B->top = 1;
+    B->featured_since = B->clock_now;
+    if (id > FEATURED_HIT) B->featured_at = id - FEATURED_HIT - 1;
+    else key(K_OK);
+    return;
+  }
+  float area = at_featured() ? ROWS_TOP_FEATURED : ROWS_TOP;
+  if (y < area - 20 || y >= SC_DESIGN_H) return;
+  float top = area - B->rows_y;
+  for (int i = 0; i < B->nrows; i++) {
+    row *r = &B->rows[i];
+    if (!shown(r, i)) continue;
+    float dy = y - top - ROW_TITLE_H;
+    top += row_height(r);
+    if (!r->n || dy < 0 || dy >= (r->wide ? WIDE_H : CARD_H)) continue;
+    float step = card_step(r), dx = x - ROW_LEFT + r->scroll;
+    int col = (int)(dx / step);
+    if (col >= r->n) return;
+    float width = r->folders ? ui_folder_width(&r->cards[col]) : r->wide ? WIDE_W : CARD_W,
+          height = r->folders ? ui_folder_height(&r->cards[col]) : r->wide ? WIDE_H : CARD_H;
+    if (dx - col * step >= width || dy >= height) return;
+    /* passing over another row (or from the featured title) would move Home under the pointer:
+       only a click goes there */
+    if (!press && (at_featured() || i != B->cur || nav_has_focus())) return;
+    if (nav_has_focus()) nav_key(K_RIGHT);
+    B->top = 0;
+    B->cur = i;
+    r->col = col;
+    if (press) key(K_OK);
+    return;
+  }
+}
+
+static void home_point(float x, float y, int press) { B = &home_board; point(x, y, press); }
+static void library_point(float x, float y, int press) { B = &library_board; point(x, y, press); }
+
+const screen home_screen = {home_enter, home_key, home_frame, NULL, 0, home_point};
+const screen library_screen = {library_enter, library_key, library_frame, NULL, 0, library_point};

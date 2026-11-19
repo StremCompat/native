@@ -427,6 +427,14 @@ static void go_next(void) {
   free(type), free(title), free(episode);
 }
 
+/* the app is closing while a video plays: what was watched is told and the torrent let go */
+void player_quit(void) {
+  if (!ready) return;
+  report("leave");
+  close_video();
+  ready = 0;
+}
+
 static void leave(void) {
   list.open = 0;
   report("leave");
@@ -764,8 +772,12 @@ static void draw_cover(float alpha) {
   gfx_pop_opacity();
 }
 
+/* where the bar's buttons and seek line were drawn last, for the pointer: x, y, w, h */
+static float button_box[B_COUNT][4], seek_box[4];
+
 static void draw_button(int b, float x, float y, float size) {
   int focused = mode == MODE_BUTTONS && button == b;
+  button_box[b][0] = x, button_box[b][1] = y, button_box[b][2] = button_box[b][3] = size;
   gfx_rect(x, y, size, size, size / 2, focused ? C_WHITE : C_TEXT(0.13f));
   uint32_t c = focused ? SC_RGBA(0, 0, 0, 255) : C_WHITE;
   static const icon_id icons[B_COUNT] = {ICON_SUBTITLES, ICON_EPISODES, ICON_SOURCES, ICON_REWIND,
@@ -850,6 +862,7 @@ static void draw_bar(void) {
   if (seek_focus) gfx_outline(x - 3, y + 4 - bh / 2 - 3, bar_w + 6, bh + 6, 6, 3, C_TEXT(0.34f));
   gfx_rect(x, y + 4 - bh / 2, bar_w, bh, 3, C_TEXT(0.22f));
   gfx_rect(x, y + 4 - bh / 2, bar_w * frac, bh, 3, C_WHITE);
+  seek_box[0] = x, seek_box[1] = y + 4 - 24, seek_box[2] = bar_w, seek_box[3] = 48;
   draw_chapter_marks(x, y + 4 - bh / 2, bar_w, bh, d / 1000);
   if (previews_on && (seek_focus || seeking) && !live) draw_preview(x + bar_w * frac, y - 26, at);
   float knob = seek_focus ? 28 : seeking ? 26 : 18;
@@ -867,6 +880,7 @@ static void draw_bar(void) {
   /* the buttons: left, centre (bigger play), right */
   float row = y + 4 + 26 + 20;
   float bx = x;
+  memset(button_box, 0, sizeof button_box);
   for (int b = B_MEDIA; b <= B_SOURCES; b++)
     if (shown(b)) draw_button(b, bx, row + 8, BTN), bx += BTN + 24;
   float cx = SC_DESIGN_W / 2 - (BTN + 40 + BTN_BIG / 2);
@@ -879,6 +893,7 @@ static void draw_bar(void) {
     const char *label = txp("nextEpisode", NULL);
     float w = text_width(label, 27, W_BOLD) + 80, nx = rx - 24 - w;
     int f = mode == MODE_BUTTONS && button == B_NEXT;
+    button_box[B_NEXT][0] = nx, button_box[B_NEXT][1] = row + 8, button_box[B_NEXT][2] = w, button_box[B_NEXT][3] = BTN;
     gfx_rect(nx, row + 8, w, BTN, BTN / 2, f ? C_WHITE : C_TEXT(0.13f));
     ui_line(label, nx + 40, row + 8, BTN, 27, W_BOLD, f ? SC_RGBA(0, 0, 0, 255) : C_WHITE);
   }
@@ -1083,4 +1098,42 @@ static void frame(double t, float dt) {
 
 static void enter(void) {}
 
-const screen player_screen = {enter, key, frame, NULL, 0};
+/* The Magic Remote's pointer: moving it shows the bar and puts the focus on the button it is over;
+   a click presses it, a click on the seek line goes to that point, and one on the picture plays or
+   pauses. The menus open over the bar take it first. */
+static int inside(const float *box, float x, float y) {
+  return box[2] > 0 && x >= box[0] && x < box[0] + box[2] && y >= box[1] && y < box[1] + box[3];
+}
+
+static void point(float x, float y, int press) {
+  bar_until = clock_now + BAR_SHOW_MS;
+  if (!countdown_at) auto_next_count = 0;
+  if (list.open) {
+    int id = menu_point(&list, x, y, press);
+    if (id >= 0) choose(id);
+    return;
+  }
+  if (countdown_at || player_status() == PLAYER_FAILED) {
+    if (press) key(K_OK);
+    return;
+  }
+  for (int b = 0; b < B_COUNT; b++)
+    if (inside(button_box[b], x, y) && (b != B_NEXT || shown(B_NEXT))) {
+      mode = MODE_BUTTONS;
+      button = b;
+      if (press) press_button();
+      return;
+    }
+  if (inside(seek_box, x, y) && !live && player_duration() > 0) {
+    mode = MODE_SEEK;
+    if (press) {
+      seek_base = player_position();
+      seek_target = player_duration() * clampf((x - seek_box[0]) / seek_box[2], 0, 1);
+      commit_seek();
+    }
+    return;
+  }
+  if (press && y < SC_DESIGN_H - 420) toggle();
+}
+
+const screen player_screen = {enter, key, frame, NULL, 0, point};

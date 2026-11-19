@@ -15,6 +15,8 @@ typedef struct {
   void (*text)(const char *utf8);
   /* drawn over the screen below it (a panel or a menu), which shows underneath */
   int overlay;
+  /* the pointer at (x, y) on the 1920x1080 design: press 0 when it moved there, 1 for a click */
+  void (*point)(float x, float y, int press);
 } screen;
 
 extern const screen home_screen, title_screen, sources_screen, player_screen, login_screen, profiles_screen, search_screen,
@@ -57,5 +59,7 @@ void channels_open(int what);
 void folder_open(const char *id);
 /* the title's trailer, inside the app, where a free source has one */
 void player_play_trailer(const char *type, const char *id);
+/* the app closes: a video playing is reported and let go */
+void player_quit(void);
 
 #endif

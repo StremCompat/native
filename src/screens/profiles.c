@@ -65,34 +65,57 @@ static void pin_type(char digit) {
   net_request("/app/profile/pin", body, NET_HIGH, NULL, pin_sent, NULL);
 }
 
+/* The pad as a phone's: 1 to 9 in three rows, then 0 in the middle and Delete at the right (cell 9,
+   bottom left, is empty). The focus moves in four directions over it. */
+#define PIN_KEY 84.0f
+#define PIN_GAP 18.0f
+#define PIN_EMPTY 9
+#define PIN_ZERO 10
+#define PIN_DELETE 11
+
+static void pin_press(int cell) {
+  if (cell == PIN_DELETE) pin_type(0);
+  else if (cell == PIN_ZERO) pin_type('0');
+  else if (cell < PIN_EMPTY) pin_type((char)('1' + cell));
+}
+
 static void pin_keys(app_key k) {
+  int row = pin_key / 3, col = pin_key % 3;
   if (k == K_BACK) pin_mode = 0;
-  else if (k == K_LEFT && pin_key > 0) pin_key--;
-  else if (k == K_RIGHT && pin_key < 10) pin_key++;
-  else if (k == K_OK) pin_type(pin_key == 10 ? 0 : (char)('0' + (pin_key + 1) % 10));
+  else if (k == K_LEFT && col > 0) col--;
+  else if (k == K_RIGHT && col < 2) col++;
+  else if (k == K_UP && row > 0) row--;
+  else if (k == K_DOWN && row < 3) row++;
+  else if (k == K_OK) pin_press(pin_key);
+  int next = row * 3 + col;
+  /* the empty cell is stepped over: towards 0 from above or from the right, back up from the left */
+  if (next == PIN_EMPTY) next = k == K_LEFT ? pin_key : PIN_ZERO;
+  pin_key = next;
 }
 
 static void draw_pin(void) {
-  float cy = SC_DESIGN_H * 0.15f + 140;
+  float cy = SC_DESIGN_H * 0.12f;
   float tw = text_width(pin_title, 40, W_BOLD);
   ui_line(pin_title, (SC_DESIGN_W - tw) / 2, cy, 56, 40, W_BOLD, C_WHITE);
   for (int i = 0; i < 4; i++) {
-    float x = SC_DESIGN_W / 2.0f - 2 * 54 + i * 54 + 14;
-    if (i < (int)strlen(pin)) gfx_rect(x, cy + 110, 26, 26, 13, C_WHITE);
-    else gfx_outline(x, cy + 110, 26, 26, 13, 3, C_TEXT(0.55f));
+    float x = SC_DESIGN_W / 2.0f - 2 * 46 + i * 46 + 10;
+    if (i < (int)strlen(pin)) gfx_rect(x, cy + 92, 24, 24, 12, C_WHITE);
+    else gfx_outline(x, cy + 92, 24, 24, 12, 3, C_TEXT(0.45f));
   }
-  const char *del = tx("pinDelete");
-  float dw = text_width(del, 22, W_BOLD) + 44, total = 10 * 76 + dw, x = (SC_DESIGN_W - total) / 2, ky = cy + 200;
-  for (int i = 0; i < 11; i++) {
-    char label[4];
-    snprintf(label, sizeof label, "%d", (i + 1) % 10);
-    float w = i < 10 ? 64 : dw;
+  float left = (SC_DESIGN_W - (3 * PIN_KEY + 2 * PIN_GAP)) / 2, top = cy + 160;
+  for (int i = 0; i < 12; i++) {
+    if (i == PIN_EMPTY) continue;
+    float x = left + (i % 3) * (PIN_KEY + PIN_GAP), y = top + (i / 3) * (PIN_KEY + PIN_GAP);
     int f = i == pin_key;
-    gfx_rect(x, ky, w, 70, 14, f ? C_WHITE : C_TEXT(0.1f));
-    const char *s = i < 10 ? label : del;
-    float size = i < 10 ? 30 : 22, lw = text_width(s, size, W_BOLD);
-    ui_line(s, x + (w - lw) / 2, ky, 70, size, W_BOLD, f ? C_BG : C_WHITE);
-    x += w + 12;
+    gfx_rect(x, y, PIN_KEY, PIN_KEY, PIN_KEY / 2, f ? C_WHITE : C_TEXT(0.1f));
+    hit_add(i, x, y, PIN_KEY, PIN_KEY);
+    if (i == PIN_DELETE) {
+      ui_icon(ICON_CLOSE, x + (PIN_KEY - 30) / 2, y + (PIN_KEY - 30) / 2, 30, f ? C_BG : C_WHITE);
+      continue;
+    }
+    char label[2] = {(char)(i == PIN_ZERO ? '0' : '1' + i), 0};
+    float lw = text_width(label, 34, W_SEMIBOLD);
+    ui_line(label, x + (PIN_KEY - lw) / 2, y, PIN_KEY, 34, W_SEMIBOLD, f ? C_BG : C_WHITE);
   }
 }
 
@@ -333,10 +356,11 @@ static void frame(double t, float dt) {
   (void)t;
   (void)dt;
   gfx_gradient(0, 0, SC_DESIGN_W, SC_DESIGN_H, 0, SC_RGBA(29, 29, 32, 255), C_BG, 1);
+  /* the PIN pad stands alone, with its own title */
+  if (loaded && pin_mode) return draw_pin();
   const char *title = tx("whoIsWatching");
   text_draw(title, (SC_DESIGN_W - text_width(title, 64, W_EXTRABOLD)) / 2, SC_DESIGN_H * 0.15f, 64, W_EXTRABOLD, C_WHITE);
   if (!loaded) return;
-  if (pin_mode) return draw_pin();
   if (editing) return draw_editor();
   int places = count + (count < MAX_PROFILES);
   float total = places * CARD + (places - 1) * FACE_GAP, x = (SC_DESIGN_W - total) / 2, y = SC_DESIGN_H * 0.15f + 77 + 70;
@@ -396,4 +420,27 @@ static void frame(double t, float dt) {
 
 static void enter(void) { editing = on_edit_button = pin_mode = 0; }
 
-const screen profiles_screen = {enter, key, frame, text, 0};
+static void point(float x, float y, int press) {
+  if (!loaded || busy) return;
+  /* the PIN pad comes first, as for the keys: the editor opens it too */
+  if (pin_mode) {
+    int cell = hit_at(x, y);
+    if (cell < 0) return;
+    pin_key = cell;
+    if (press) pin_press(cell);
+    return;
+  }
+  if (editing) return;
+  int places = count + (count < MAX_PROFILES);
+  float total = places * CARD + (places - 1) * FACE_GAP;
+  float dx = x - (SC_DESIGN_W - total) / 2;
+  float top = SC_DESIGN_H * 0.15f + 147;
+  if (dx < 0 || y < top || y >= top + FACE + 75) return;
+  int i = (int)(dx / (CARD + FACE_GAP));
+  if (i >= places || dx - i * (CARD + FACE_GAP) >= CARD) return;
+  at = i;
+  on_edit_button = 0;
+  if (press) key(K_OK);
+}
+
+const screen profiles_screen = {enter, key, frame, text, 0, point};

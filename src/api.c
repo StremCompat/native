@@ -95,14 +95,17 @@ const char *tx(const char *key) {
 }
 
 const char *txp(const char *key, const char *a0) {
-  static char out[512];
+  /* a few answers in turn, as txf: a line made of two (title and hint) read both before one is reused */
+  static char ring[4][512];
+  static int next;
+  char *out = ring[next++ % 4];
   const jval *root = json_root(texts);
   const char *text = json_str(json_get(json_get(json_get(root, "lang"), "player"), key), NULL);
   if (!text) text = json_str(json_get(json_get(json_get(root, "fallback"), "player"), key), key);
   size_t n = 0;
-  for (const char *p = text; *p && n < sizeof out - 1; p++) {
+  for (const char *p = text; *p && n < sizeof ring[0] - 1; p++) {
     if (p[0] == '{' && p[1] == '0' && p[2] == '}' && a0) {
-      for (const char *a = a0; *a && n < sizeof out - 1; a++) out[n++] = *a;
+      for (const char *a = a0; *a && n < sizeof ring[0] - 1; a++) out[n++] = *a;
       p += 2;
     } else {
       out[n++] = *p;

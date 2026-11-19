@@ -149,6 +149,7 @@ static void frame(double t, float dt) {
     const char *retry = T("Tentar de novo", "Try again");
     float bw = text_width(retry, 21, W_BOLD) + 68, bx = (SC_DESIGN_W - bw) / 2;
     gfx_rect(bx, y + 90, bw, 54, 12, C_WHITE);
+    hit_add(0, bx, y + 90, bw, 54);
     ui_line(retry, bx + 34, y + 90, 54, 21, W_BOLD, C_BG);
     char code[300];
     snprintf(code, sizeof code, "%s %s \xC2\xB7 %s \xC2\xB7 %s", stale ? "STALE_SERVICE" : "RUNTIME_START_TIMEOUT", APP_VERSION,
@@ -166,4 +167,9 @@ static void frame(double t, float dt) {
             y + 40, 26, 16, W_REGULAR, C_TEXT(0.34f));
 }
 
-const screen boot_screen = {enter, key, frame, NULL, 0};
+/* the pointer: a click on Try again */
+static void point(float x, float y, int press) {
+  if (press && hit_at(x, y) == 0) key(K_OK);
+}
+
+const screen boot_screen = {enter, key, frame, NULL, 0, point};

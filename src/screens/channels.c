@@ -24,6 +24,7 @@
 #define LIST_Y 152.0f
 #define CAT_W 420.0f
 #define CAT_H 66.0f
+#define CAT_HIT 100000 /* the categories' ids for the pointer, after the channels' */
 #define CAT_STEP 74.0f
 #define CH_X (LEFT + CAT_W + 30)
 #define CH_H 102.0f
@@ -328,6 +329,7 @@ static void frame(double t, float dt) {
     float y = LIST_Y + (i - cat_top) * CAT_STEP;
     int cur = i == cat_at, f = cur && !on_list && !nav;
     if (cur) gfx_rect(LEFT, y, CAT_W, CAT_H, 12, f ? C_WHITE : C_TEXT(0.10f));
+    hit_add(CAT_HIT + i, LEFT, y, CAT_W, CAT_H);
     uint32_t c = f ? C_BG : kinds[i] == C_GROUP ? C_TEXT(0.78f) : C_WHITE;
     float tw = CAT_W - 44 - (cats[i].count > 0 ? 70 : 0);
     text_draw_fit(cats[i].title, LEFT + 22, y + (CAT_H - text_line_height(25)) / 2, tw, 25, W_SEMIBOLD, c);
@@ -347,6 +349,7 @@ static void frame(double t, float dt) {
     int f = i == ch_at && on_list && !nav;
     if (kind == C_LISTS) draw_list_row(i, y, f);
     else draw_channel(&chans[i], y, f);
+    hit_add(i, CH_X, y, SC_DESIGN_W - 48 - CH_X, CH_H);
   }
   if (loaded && !count && kind != C_ADD && kind != C_SEARCH)
     text_draw_wrap(loading ? tx("searching") : ncats <= 2 ? empty : tx("noChannels"), CH_X, LIST_Y + 14, 1100, 25, W_REGULAR,
@@ -369,4 +372,28 @@ static void enter(void) {
   load();
 }
 
-const screen channels_screen = {enter, key, frame, text, 0};
+/* The pointer: the address panel first; a click on a category opens it (or its panel); passing over
+   a channel or a list takes the focus, and a click plays it or does what OK does there. */
+static void point(float x, float y, int press) {
+  if (addr_active()) return addr_point(x, y, press);
+  if (nav_point(x, y, press)) return;
+  int id = hit_at(x, y);
+  if (id < 0) return;
+  if (nav_has_focus()) nav_key(K_RIGHT);
+  if (id >= CAT_HIT) {
+    if (!press) return;
+    on_list = 0;
+    if (cat_at != id - CAT_HIT) {
+      cat_at = id - CAT_HIT;
+      load_page(0);
+    }
+    if (kinds[cat_at] == C_SEARCH || kinds[cat_at] == C_ADD) activate();
+    return;
+  }
+  on_list = 1;
+  if (ch_at != id) armed = -1;
+  ch_at = id;
+  if (press) activate();
+}
+
+const screen channels_screen = {enter, key, frame, text, 0, point};

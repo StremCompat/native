@@ -22,6 +22,7 @@
 #define COLS 5
 #define MAX_TABS 24
 #define MAX_ITEMS 400
+#define TAB_HIT 1000 /* the tabs' ids for the pointer, after the titles' */
 
 static char folder_id[128], title[160], cover[512];
 static char tab_names[MAX_TABS][160], tab_message[MAX_TABS][200];
@@ -123,6 +124,7 @@ static void frame(double t, float dt) {
     float w = text_width(tab_names[i], 22, W_SEMIBOLD) + 44;
     int f = on_tabs && i == tab_at && !nav, cur = i == tab_at;
     gfx_rect(x, ty, w, 50, 25, f ? C_WHITE : C_TEXT(cur ? 0.18f : 0.08f));
+    hit_add(TAB_HIT + i, x, ty, w, 50);
     ui_line(tab_names[i], x + 22, ty, 50, 22, W_SEMIBOLD, f ? C_BG : C_WHITE);
     x += w + 12;
   }
@@ -134,6 +136,7 @@ static void frame(double t, float dt) {
     float cx = LEFT + (i % COLS) * STEP_X, cy = gy + (i / COLS) * STEP_Y - scroll;
     if (cy + TILE_H < gy - 18 || cy > SC_DESIGN_H) continue;
     ui_tile(&items[i], cx, cy, TILE_W, TILE_H, !on_tabs && i == at && !nav);
+    hit_add(i, cx, cy, TILE_W, TILE_H);
   }
   gfx_pop_clip();
   if (loaded && !nitems)
@@ -155,4 +158,23 @@ static void enter(void) {
   sb_free(&p);
 }
 
-const screen folder_screen = {enter, key, frame, NULL, 0};
+/* the pointer: a click on a tab shows its lists; passing over a title of the same row takes the
+   focus (another row would scroll the grid under it), a click opens it */
+static void point(float x, float y, int press) {
+  if (nav_point(x, y, press)) return;
+  int id = hit_at(x, y);
+  if (id < 0) return;
+  if (nav_has_focus()) nav_key(K_RIGHT);
+  if (id >= TAB_HIT) {
+    if (!press) return;
+    on_tabs = 1;
+    if (tab_at != id - TAB_HIT) tab_at = id - TAB_HIT, load_page(0);
+    return;
+  }
+  if (!press && (on_tabs || id / COLS != at / COLS)) return;
+  on_tabs = 0;
+  at = id;
+  if (press) key(K_OK);
+}
+
+const screen folder_screen = {enter, key, frame, NULL, 0, point};

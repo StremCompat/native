@@ -223,6 +223,7 @@ static void draw_keys(void) {
     int r = key_row(i), c = key_col(i), focused = zone == Z_KEYS && key_at == i && !nav_has_focus();
     float w = i >= K_SPACE ? KEY_W * 2 + KEY_GAP : KEY_W, x = LEFT + c * (KEY_W + KEY_GAP), y = ky + r * (KEY_H + KEY_GAP);
     gfx_rect(x, y, w, KEY_H, 10, focused ? C_WHITE : C_TEXT(0.08f));
+    hit_add(Z_KEYS * 1000 + i, x, y, w, KEY_H);
     char letter[2] = {KEYS[i < 36 ? i : 0], 0};
     const char *label = i < 36 ? letter : i == K_SPACE ? tx("keySpace") : i == K_DEL ? tx("keyDelete") : tx("keyClear");
     float size = i < 36 ? 28 : 22, lw = text_width(label, size, W_SEMIBOLD);
@@ -241,6 +242,7 @@ static void draw_recent(void) {
     int f = zone == Z_RECENT && i == recent_at;
     float w = text_width(recent[i], 22, f ? W_BOLD : W_REGULAR) + 48;
     gfx_rect(SIDE_X, y, w, 46, 23, f ? C_WHITE : C_TEXT(0.07f));
+    hit_add(Z_RECENT * 1000 + i, SIDE_X, y, w, 46);
     ui_line(recent[i], SIDE_X + 24, y, 46, 22, f ? W_BOLD : W_REGULAR, f ? SC_RGBA(12, 11, 17, 255) : C_TEXT(0.72f));
     y += 46 + 14;
   }
@@ -276,6 +278,7 @@ static void draw_rows(float dt) {
       int f = zone == Z_ROWS && r == row_at && i == row->col;
       ui_card(&row->items[i], x, y + 59, 0, f);
       ui_card_name(&row->items[i], x, y + 59, f);
+      hit_add(Z_ROWS * 1000 + r * 100 + i, x < ROWS_X ? ROWS_X : x, y + 59, CARD_W, CARD_H);
     }
     y += 59 + CARD_H + 26;
   }
@@ -310,4 +313,23 @@ static void enter(void) {
   phone_start();
 }
 
-const screen search_screen = {enter, key, frame, text, 0};
+/* The pointer: passing over a key or a recent search takes the focus, a click presses it; over a
+   result of the row in focus it takes the focus (another row would scroll the page under it), and a
+   click opens it. */
+static void point(float x, float y, int press) {
+  if (nav_point(x, y, press)) return;
+  int id = hit_at(x, y);
+  if (id < 0) return;
+  if (nav_has_focus()) nav_key(K_RIGHT);
+  int z = id / 1000, at = id % 1000;
+  if (z == Z_ROWS) {
+    if (at / 100 >= nrows || (!press && (zone != Z_ROWS || at / 100 != row_at))) return;
+    row_at = at / 100;
+    rows[row_at].col = at % 100;
+  } else if (z == Z_RECENT) recent_at = at;
+  else key_at = at;
+  zone = z;
+  if (press) key(K_OK);
+}
+
+const screen search_screen = {enter, key, frame, text, 0, point};

@@ -88,6 +88,7 @@ static void frame(double t, float dt) {
     if (y + ITEM_H < LIST_TOP - 6 || y > LIST_TOP + LIST_H) continue;
     int f = i == at;
     gfx_rect(bx + 40, y, BOX_W - 80, ITEM_H, 14, f ? C_WHITE : SC_RGBA(42, 42, 45, 255));
+    hit_add(i, bx + 40, y, BOX_W - 80, ITEM_H);
     if (f && moving) gfx_outline(bx + 36, y - 4, BOX_W - 72, ITEM_H + 8, 17, 4, SC_RGBA(34, 211, 238, 255));
     uint32_t c = f ? C_BG : C_WHITE;
     gfx_push_opacity(rows[i].hidden ? 0.45f : 1);
@@ -106,4 +107,12 @@ static void enter(void) {
   api_get("/app/rows", listed, NULL);
 }
 
-const screen rows_screen = {enter, key, frame, NULL, 1};
+/* the pointer: a click on a row shows or hides it on Home (moving rows stays with the remote) */
+static void point(float x, float y, int press) {
+  int id = hit_at(x, y);
+  if (!press || id < 0 || moving) return;
+  at = id;
+  key(K_RIGHT);
+}
+
+const screen rows_screen = {enter, key, frame, NULL, 1, point};

@@ -23,6 +23,7 @@
 #define COLS 5
 #define MAX_ITEMS 500 /* the most Settings offers; the chosen one comes with each page */
 #define MAX_OPTIONS 64
+#define FILTER_HIT 1000 /* the filters' ids for the pointer, after the titles' */
 
 enum { F_TYPE, F_CATALOG, F_GENRE, F_COUNT };
 
@@ -90,6 +91,16 @@ static void enter(void) {
   }
 }
 
+/* an option of the open filter chosen */
+static void pick(int id) {
+  chosen[filter] = id;
+  /* a new type has other catalogs, a new catalog other genres */
+  if (filter == F_TYPE) chosen[F_CATALOG] = chosen[F_GENRE] = 0;
+  if (filter == F_CATALOG) chosen[F_GENRE] = 0;
+  picker.open = 0;
+  restart();
+}
+
 static void key(app_key k) {
   if (nav_has_focus()) {
     nav_key(k);
@@ -97,14 +108,7 @@ static void key(app_key k) {
   }
   if (picker.open) {
     int id = menu_key(&picker, k);
-    if (id >= 0) {
-      chosen[filter] = id;
-      /* a new type has other catalogs, a new catalog other genres */
-      if (filter == F_TYPE) chosen[F_CATALOG] = chosen[F_GENRE] = 0;
-      if (filter == F_CATALOG) chosen[F_GENRE] = 0;
-      picker.open = 0;
-      restart();
-    }
+    if (id >= 0) pick(id);
     return;
   }
   if (k == K_BACK) {
@@ -147,6 +151,7 @@ static void frame(double t, float dt) {
     int focused = !in_grid && filter == f && !nav_has_focus();
     float w = text_width(label, 26, W_BOLD) + 30 + 24 + 30;
     gfx_rect(x, fy, w, 56, 12, focused ? C_WHITE : C_TEXT(0.1f));
+    hit_add(FILTER_HIT + f, x, fy, w, 56);
     ui_line(label, x + 30, fy, 56, 26, W_BOLD, focused ? C_BG : C_TEXT(0.9f));
     /* the small triangle saying it opens */
     float tx0 = x + w - 30 - 12, ty = fy + 25;
@@ -162,6 +167,7 @@ static void frame(double t, float dt) {
     if (cy + TILE_H < GRID_Y - 18 || cy > SC_DESIGN_H) continue;
     int f = in_grid && i == at && !nav_has_focus();
     ui_tile(&items[i], cx, cy, TILE_W, TILE_H, f);
+    hit_add(i, cx, cy, TILE_W, TILE_H);
   }
   if (!nitems && !loading) text_draw(tx("nothingFound"), LEFT, GRID_Y + 20, 30, W_BOLD, C_WHITE);
   else if (!nitems) text_draw(tx("searching"), LEFT, GRID_Y + 20, 26, W_REGULAR, C_TEXT(0.72f));
@@ -170,4 +176,29 @@ static void frame(double t, float dt) {
   nav_draw(NAV_DISCOVER, dt);
 }
 
-const screen discover_screen = {enter, key, frame, NULL, 0};
+/* the pointer: the open list of a filter first; a click on a filter opens its list; passing over a
+   title of the same row takes the focus (another row would scroll the grid under it), a click opens
+   it */
+static void point(float x, float y, int press) {
+  if (nav_point(x, y, press)) return;
+  if (picker.open) {
+    int id = menu_point(&picker, x, y, press);
+    if (id >= 0) pick(id);
+    return;
+  }
+  int id = hit_at(x, y);
+  if (id < 0) return;
+  if (nav_has_focus()) nav_key(K_RIGHT);
+  if (id >= FILTER_HIT) {
+    in_grid = 0;
+    filter = id - FILTER_HIT;
+    if (press) key(K_OK);
+    return;
+  }
+  if (!press && (!in_grid || id / COLS != at / COLS)) return;
+  in_grid = 1;
+  at = id;
+  if (press) key(K_OK);
+}
+
+const screen discover_screen = {enter, key, frame, NULL, 0, point};

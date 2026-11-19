@@ -78,6 +78,22 @@ static float chip_y(int i) {
   return (SC_DESIGN_H - (shown * CHIP_STEP)) / 2 + 4 + at * CHIP_STEP;
 }
 
+int nav_point(float x, float y, int press) {
+  /* open (it has the focus), the names beside the chips count too */
+  float right = focused >= 0 ? PANEL_W * 0.62f : CHIP_X + CHIP_W;
+  if (x < CHIP_X || x >= right) return 0;
+  for (int i = 0; i < NAV_COUNT; i++) {
+    float top = chip_y(i);
+    if (!present(i) || y < top || y >= top + CHIP_H) continue;
+    /* passing over the closed rail does not open it; a click does */
+    if (!press && focused < 0) return 1;
+    focused = i;
+    if (press) nav_key(K_OK);
+    return 1;
+  }
+  return 0;
+}
+
 void nav_draw(nav_item current, float dt) {
   open = ui_approach(open, focused >= 0 ? 1.0f : 0.0f, dt, 60);
   /* the rail's own shade, and the darker panel behind the names while it has the focus */

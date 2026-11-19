@@ -117,7 +117,21 @@ int menu_key(menu *m, int key) {
 #define MENU_ROW 62.0f
 #define MENU_SHOWN 10
 
-void menu_draw(const menu *m, float x, float bottom) {
+int menu_point(menu *m, float x, float y, int press) {
+  if (!m->open || !m->n) return -1;
+  int inside = x >= m->box_x && x < m->box_x + m->box_w + 24 && y >= m->box_y && y < m->rows_y + m->shown * MENU_ROW + 12;
+  if (!inside) {
+    if (!press) return -1;
+    m->open = 0;
+    return -2;
+  }
+  int row = (int)((y - m->rows_y) / MENU_ROW);
+  if (y < m->rows_y || row >= m->shown) return -1;
+  m->at = m->first + row;
+  return press ? m->items[m->at].id : -1;
+}
+
+void menu_draw(menu *m, float x, float bottom) {
   if (!m->open) return;
   float w = 360;
   for (int i = 0; i < m->n; i++) {
@@ -127,6 +141,8 @@ void menu_draw(const menu *m, float x, float bottom) {
   if (w > 820) w = 820;
   int first = m->at >= MENU_SHOWN ? m->at - MENU_SHOWN + 1 : 0, shown = m->n - first < MENU_SHOWN ? m->n - first : MENU_SHOWN;
   float head = m->title[0] ? 50 : 0, h = 24 + head + shown * MENU_ROW, y = bottom - h;
+  m->box_x = x, m->box_y = y, m->box_w = w, m->rows_y = y + 12 + head;
+  m->first = first, m->shown = shown;
   gfx_rect(x, y, w + 24, h, 14, SC_RGBA(20, 20, 22, 247));
   if (head) {
     char up[128];
@@ -150,6 +166,28 @@ void ui_qr(const char *modules, int size, float x, float y, float box) {
   for (int r = 0; r < size; r++)
     for (int c = 0; c < size; c++)
       if (modules[r * size + c] == '1') gfx_rect(ox + c * cell, oy + r * cell, cell + 0.5f, cell + 0.5f, 0, SC_RGBA(0, 0, 0, 255));
+}
+
+/* ---------- what the pointer can press ---------- */
+#define HITS_MAX 400
+static struct {
+  int id;
+  float x, y, w, h;
+} hits[HITS_MAX];
+static int nhits;
+
+void hit_reset(void) { nhits = 0; }
+
+void hit_add(int id, float x, float y, float w, float h) {
+  if (nhits >= HITS_MAX) return;
+  hits[nhits].id = id, hits[nhits].x = x, hits[nhits].y = y, hits[nhits].w = w, hits[nhits].h = h;
+  nhits++;
+}
+
+int hit_at(float x, float y) {
+  for (int i = nhits - 1; i >= 0; i--)
+    if (x >= hits[i].x && x < hits[i].x + hits[i].w && y >= hits[i].y && y < hits[i].y + hits[i].h) return hits[i].id;
+  return -1;
 }
 
 /* ---------- toast ---------- */
@@ -284,13 +322,13 @@ float ui_folder_width(const card *c) {
   return CARD_W;
 }
 
-static float folder_height(const card *c) {
+float ui_folder_height(const card *c) {
   if (c->shape && (!strcmp(c->shape, "wide") || !strcmp(c->shape, "square"))) return CARD_W;
   return CARD_H;
 }
 
 void ui_folder_tile(const card *c, float x, float y, int focused) {
-  float w = ui_folder_width(c), h = folder_height(c);
+  float w = ui_folder_width(c), h = ui_folder_height(c);
   gfx_rect(x, y, w, h, CARD_RADIUS, C_TEXT(0.07f));
   const sc_tex *pic = c->art ? img_get(c->art, (int)w, NULL) : NULL;
   if (pic) gfx_image(pic, x, y, w, h, CARD_RADIUS, 1, COVER);

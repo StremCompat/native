@@ -22,6 +22,8 @@ typedef enum {
 /* the rail takes the focus, on the screen it belongs to */
 void nav_focus(nav_item current);
 int nav_has_focus(void);
+/* the pointer over the rail (press: a click): 1 when it was on a chip */
+int nav_point(float x, float y, int press);
 /* a key while the rail has the focus: Right or Back give the focus back to the screen; OK
    opens the section chosen (or leaves the app) and returns it, otherwise -1 */
 int nav_key(app_key k);

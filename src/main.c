@@ -11,6 +11,7 @@
 #include "img.h"
 #include "net.h"
 #include "platform.h"
+#include "screens.h"
 #include "text.h"
 #include "util.h"
 
@@ -156,6 +157,9 @@ int main(int argc, char **argv) {
   emscripten_set_main_loop(step, 0, 1);
 #endif
   while (running) step();
+  /* a video playing: its last report and its release go out before the network stops */
+  player_quit();
+  SDL_Delay(200);
   net_shutdown();
   SDL_GL_DeleteContext(ctx);
   SDL_DestroyWindow(win);

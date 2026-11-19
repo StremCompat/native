@@ -341,6 +341,8 @@ static void draw_list(float top, float dt) {
         gfx_outline(CONTENT_X, y, CONTENT_W, h, 12, 3, C_WHITE);
       }
       draw_source(i, y, 1);
+      float shown_top = y < top ? top : y;
+      hit_add(ZONE_LIST * 1000 + i, CONTENT_X, shown_top, CONTENT_W, y + h - shown_top);
     }
     y += h + 12;
   }
@@ -370,6 +372,7 @@ static void draw_tabs(float y, float dt) {
     float w = text_width(addons[i].label, 22, W_SEMIBOLD) + 24;
     if (f) gfx_rect(x, y + 4, w, 40, 8, C_WHITE);
     else if (cur) gfx_rect(x + 12, y + 41, w - 24, 3, 1.5f, C_TEXT(0.8f));
+    if (x + w > CONTENT_X && x < CONTENT_X + CONTENT_W) hit_add(ZONE_ADDONS * 1000 + i, x, y + 4, w, 40);
     ui_line(addons[i].label, x + 12, y + 4, 40, 22, W_SEMIBOLD, f ? C_BG : cur ? C_WHITE : C_TEXT(0.6f));
     x += w + gap;
   }
@@ -386,6 +389,7 @@ static void frame(double t, float dt) {
   const char *best = tx("playBest");
   float bx = CONTENT_X + hw + 20, bw = 12 + 20 + 6 + text_width(best, 20, W_SEMIBOLD) + 18;
   gfx_rect(bx, y + 6, bw, 38, 19, best_f ? C_WHITE : C_TEXT(0.1f));
+  hit_add(ZONE_BEST * 1000, bx, y + 6, bw, 38);
   ui_icon(ICON_BOLT, bx + 12, y + 15, 20, best_f ? C_BG : C_TEXT(0.9f));
   ui_line(best, bx + 38, y + 6, 38, 20, W_SEMIBOLD, best_f ? C_BG : C_TEXT(0.9f));
   /* the language filter, at the right, when the sources come in more than one */
@@ -393,6 +397,7 @@ static void frame(double t, float dt) {
     const char *label = langs[lang_at].label;
     float lw = text_width(label, 20, W_SEMIBOLD) + 36, lx = PANEL_X + 800 - PAD_R - lw;
     int f = zone == ZONE_LANG, on = lang_at > 0;
+    hit_add(ZONE_LANG * 1000, lx, PANEL_Y + 36, lw, 38);
     if (f) gfx_rect(lx, PANEL_Y + 36, lw, 38, 19, C_WHITE);
     else gfx_outline(lx, PANEL_Y + 36, lw, 38, 19, 2, on ? C_TEXT(0.8f) : C_TEXT(0.16f));
     ui_line(label, lx + 18, PANEL_Y + 36, 38, 20, W_SEMIBOLD, f ? C_BG : on ? C_WHITE : C_TEXT(0.72f));
@@ -406,6 +411,7 @@ static void frame(double t, float dt) {
     float w = text_width(chips[i].label, 25, W_SEMIBOLD) + 56;
     if (x + w > CONTENT_X + CONTENT_W) break;
     gfx_rect(x, y, w, 54, 27, f ? C_WHITE : cur ? C_TEXT(0.22f) : C_TEXT(0.1f));
+    hit_add(ZONE_CHIPS * 1000 + i, x, y, w, 54);
     ui_line(chips[i].label, x + 28, y, 54, 25, W_SEMIBOLD, f ? C_BG : cur ? C_WHITE : C_TEXT(0.8f));
     x += w + 12;
   }
@@ -415,4 +421,23 @@ static void frame(double t, float dt) {
 
 static void enter(void) {}
 
-const screen sources_screen = {enter, key, frame, NULL, 1};
+/* The pointer: a click beside the panel closes it; on a chip, a tab, Best, the language or a source
+   it presses it. Only a click moves the list, so it never slides away under the pointer. */
+static void point(float x, float y, int press) {
+  if (!press) return;
+  autoplay = 0;
+  if (x < PANEL_X) {
+    app_back();
+    return;
+  }
+  int id = hit_at(x, y);
+  if (id < 0) return;
+  int at = id % 1000;
+  zone = id / 1000;
+  if (zone == ZONE_CHIPS && at != chip_at) chip_at = at, refilter();
+  else if (zone == ZONE_ADDONS && at != addon_at) addon_at = at, refilter();
+  else if (zone == ZONE_LIST) item_at = at, key(K_OK);
+  else if (zone == ZONE_BEST || zone == ZONE_LANG) key(K_OK);
+}
+
+const screen sources_screen = {enter, key, frame, NULL, 1, point};

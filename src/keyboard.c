@@ -44,7 +44,7 @@ void kb_erase(keyboard *kb) {
   kb->text[n] = 0;
 }
 
-static int press(keyboard *kb) {
+static int press_key(keyboard *kb) {
   if (kb->row < ROWS - 1) {
     char c[2] = {row_keys(kb, kb->row)[kb->col], 0};
     if (kb->shifted && c[0] >= 'a' && c[0] <= 'z') c[0] = (char)(c[0] - 32), kb->shifted = 0;
@@ -85,7 +85,24 @@ int kb_key(keyboard *kb, app_key k) {
   else if (k == K_UP && kb->row == 0) return KB_UP;
   else if (k == K_UP) kb->col = column_in(kb, kb->row, kb->row - 1, kb->col), kb->row--;
   else if (k == K_DOWN && kb->row < ROWS - 1) kb->col = column_in(kb, kb->row, kb->row + 1, kb->col), kb->row++;
-  else if (k == K_OK) return press(kb);
+  else if (k == K_OK) return press_key(kb);
+  return KB_NONE;
+}
+
+int kb_point(keyboard *kb, float x, float y, int press) {
+  if (x < 0 || y < 0 || y >= ROWS * (KEY + GAP)) return KB_NONE;
+  int r = (int)(y / (KEY + GAP));
+  if (y - r * (KEY + GAP) >= KEY) return KB_NONE;
+  for (int c = 0; c < row_length(kb, r); c++) {
+    float w = r == ROWS - 1 ? act_width[c] * (KEY + GAP) - GAP : KEY;
+    if (x < w) {
+      kb->row = r;
+      kb->col = c;
+      return press ? press_key(kb) : KB_NONE;
+    }
+    x -= w + GAP;
+    if (x < 0) return KB_NONE;
+  }
   return KB_NONE;
 }
 

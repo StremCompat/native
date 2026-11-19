@@ -72,10 +72,20 @@ static void frame(double t, float dt) {
     float x = LEFT + (i % COLS) * STEP_X, y = GRID_Y + (i / COLS) * STEP_Y - scroll;
     if (y + TILE_H < GRID_Y - 18 || y > SC_DESIGN_H) continue;
     ui_tile(&items[i], x, y, TILE_W, TILE_H, i == at);
+    hit_add(i, x, y, TILE_W, TILE_H);
   }
   gfx_pop_clip();
 }
 
 static void enter(void) {}
 
-const screen similar_screen = {enter, key, frame, NULL, 0};
+/* the pointer: passing over a title of the same row takes the focus (another row would scroll the
+   grid under it); a click opens it */
+static void point(float x, float y, int press) {
+  int id = hit_at(x, y);
+  if (id < 0 || (!press && id / COLS != at / COLS)) return;
+  at = id;
+  if (press) key(K_OK);
+}
+
+const screen similar_screen = {enter, key, frame, NULL, 0, point};

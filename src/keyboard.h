@@ -19,6 +19,8 @@ enum { KB_NONE, KB_CHANGED, KB_DONE, KB_UP };
 void kb_reset(keyboard *kb, const char *text, int secret);
 /* the remote: KB_CHANGED when the text changed, KB_DONE on Done, KB_UP for Up from the top row */
 int kb_key(keyboard *kb, app_key k);
+/* the pointer over the keys: the focus goes there, and a click (press) presses it */
+int kb_point(keyboard *kb, float x, float y, int press);
 /* letters from a real keyboard, and its Backspace */
 void kb_type(keyboard *kb, const char *utf8);
 void kb_erase(keyboard *kb);

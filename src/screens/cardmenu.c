@@ -76,8 +76,7 @@ void card_menu_open(const card *c, int continue_watching) {
   app_push(&card_menu_screen);
 }
 
-static void key(app_key k) {
-  int chosen = menu_key(&actions, k);
+static void choose(int chosen) {
   if (chosen == -2) {
     app_back();
     return;
@@ -99,6 +98,10 @@ static void key(app_key k) {
   }
 }
 
+static void key(app_key k) { choose(menu_key(&actions, k)); }
+
+static void point(float x, float y, int press) { choose(menu_point(&actions, x, y, press)); }
+
 static void frame(double t, float dt) {
   (void)t;
   (void)dt;
@@ -109,4 +112,4 @@ static void frame(double t, float dt) {
 
 static void enter(void) {}
 
-const screen card_menu_screen = {enter, key, frame, NULL, 1};
+const screen card_menu_screen = {enter, key, frame, NULL, 1, point};

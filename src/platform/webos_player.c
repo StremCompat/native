@@ -276,7 +276,8 @@ static int load(double from_ms) {
   seek_retry_at = 0; /* a retry belongs to the video that asked for it */
   loading_since = now_ms();
   snprintf(last_event, sizeof last_event, "load asked");
-  ntracks = audio_at = 0;
+  /* nothing of the last video's picture is taken for this one's */
+  ntracks = audio_at = hdr = 0;
   sbuf p = {0};
   sb_add(&p, "{\"uri\":");
   sb_add_json_str(&p, url);

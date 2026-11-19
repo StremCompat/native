@@ -17,7 +17,11 @@
 
 enum { F_PROVIDER, F_EMAIL, F_PASSWORD, F_BUTTON, F_COUNT };
 
-static int gen, nuvio, focus = F_EMAIL, typing, busy;
+static int gen, nuvio, focus = F_EMAIL, typing, busy, polling, code_pending;
+#define FORM_X ((SC_DESIGN_W - (420 + 180 + 568)) / 2.0f + 420 + 180)
+#define FORM_Y 224.0f
+#define KEYBOARD_X ((SC_DESIGN_W - (13 * 72 - 8)) / 2.0f)
+#define KEYBOARD_Y (SC_DESIGN_H - 360)
 static char code[32], qr_id[96], status_key[48], error[256];
 static char *qr_rows;     /* the QR's modules, row after row, '1' dark */
 static int qr_size;
@@ -33,6 +37,12 @@ static void start_code(void);
 
 static void signed_in(int profiles) {
   gen++;
+  /* the code was used: coming back to this screen (signing out) asks for a new one */
+  polling = code_pending = 0;
+  code[0] = qr_id[0] = 0;
+  free(qr_rows);
+  qr_rows = NULL;
+  qr_size = 0;
   set_status("accountConnected");
   /* a new account: its own Home (not the last one's), and the Calendar only for Stremio */
   home_reload();
@@ -42,13 +52,17 @@ static void signed_in(int profiles) {
 }
 
 static void polled(const jval *answer, void *user) {
-  if ((intptr_t)user != gen || !answer) return;
+  if ((intptr_t)user != gen) return;
+  polling = 0;
+  next_poll = clock_now + every_ms;
+  if (!answer) return;
   if (json_bool(json_get(answer, "done"), 0)) signed_in(json_bool(json_get(answer, "profiles"), 0));
   else if (json_bool(json_get(answer, "expired"), 0)) start_code();
 }
 
 static void code_came(const jval *answer, void *user) {
   if ((intptr_t)user != gen) return;
+  code_pending = 0;
   const jval *rows = json_get(answer, "qr");
   free(qr_rows);
   qr_rows = NULL;
@@ -71,6 +85,8 @@ static void code_came(const jval *answer, void *user) {
 
 static void start_code(void) {
   gen++;
+  polling = 0;
+  code_pending = 1;
   code[0] = qr_id[0] = 0;
   qr_size = 0;
   set_status("generatingCode");
@@ -79,8 +95,8 @@ static void start_code(void) {
 }
 
 static void poll(void) {
-  if (!qr_id[0] || clock_now < next_poll || busy) return;
-  next_poll = clock_now + every_ms;
+  if (!qr_id[0] || clock_now < next_poll || busy || polling) return;
+  polling = 1;
   sbuf p = {0};
   sb_addf(&p, "/app/login/poll?provider=%s&id=", nuvio ? "nuvio" : "stremio");
   sb_add_url(&p, qr_id);
@@ -121,7 +137,7 @@ static void sign_in(void) {
 }
 
 static void enter(void) {
-  if (!code[0]) start_code();
+  if (!code[0] && !code_pending) start_code();
 }
 
 /* the keyboard writes into the field it was opened on; Done goes to the next one */
@@ -132,6 +148,7 @@ static void field_done(void) {
 }
 
 static void key(app_key k) {
+  if (busy && k != K_BACK) return;
   if (typing) {
     if (k == K_BACK) {
       typing = 0;
@@ -161,6 +178,36 @@ static void text(const char *utf8) {
   if (!typing) return;
   kb_type(&kb, utf8);
   snprintf(focus == F_EMAIL ? email : password, KB_TEXT, "%s", kb.text);
+}
+
+static void point(float x, float y, int press) {
+  if (busy) return;
+  if (typing) {
+    if (kb_point(&kb, x - KEYBOARD_X, y - KEYBOARD_Y, press) == KB_DONE) field_done();
+    else snprintf(focus == F_EMAIL ? email : password, KB_TEXT, "%s", kb.text);
+    return;
+  }
+  y -= FORM_Y - lift;
+  if (x < FORM_X) {
+    if (press && !code_pending && !qr_id[0] && y >= 100 && y < 540) start_code();
+    return;
+  }
+  x -= FORM_X;
+  if (y >= 0 && y < 52) {
+    float stremio_end = text_width("Stremio", 22, W_BOLD) + 45;
+    float nuvio_end = stremio_end + text_width("Nuvio", 22, W_BOLD) + 40;
+    if (x >= nuvio_end) return;
+    focus = F_PROVIDER;
+    if (!press) return;
+    if ((x >= stremio_end) != nuvio) key(K_OK);
+    else if (!code_pending && !qr_id[0]) start_code();
+    return;
+  }
+  if (x < 568 && y >= 140 && y < 210) focus = F_EMAIL;
+  else if (x < 568 && y >= 226 && y < 296) focus = F_PASSWORD;
+  else if (x < text_width(tx("signIn"), 29, W_BOLD) + 108 && y >= 316 && y < 386) focus = F_BUTTON;
+  else return;
+  if (press) key(K_OK);
 }
 
 /* ---------- drawing ---------- */
@@ -196,7 +243,7 @@ static void frame(double t, float dt) {
   centred(tx(status_key), cx, top + 512, 22, W_REGULAR, C_TEXT(0.72f));
   gfx_rect(left + qr_w + gap, top - 10, 1, 560, 0, C_TEXT(0.14f));
   /* Stremio | Nuvio */
-  float fx = left + qr_w + gap * 2, fy = top - 6;
+  float fx = FORM_X, fy = FORM_Y;
   const char *names[2] = {"Stremio", "Nuvio"};
   float pw = 10;
   for (int i = 0; i < 2; i++) pw += text_width(names[i], 22, W_BOLD) + 40;
@@ -226,10 +273,10 @@ static void frame(double t, float dt) {
   gfx_pop_offset();
   if (typing) {
     /* the keyboard over the bottom of the screen, under the field it writes into */
-    float kw = 13 * 72 - 8, kx = (SC_DESIGN_W - kw) / 2, ky = SC_DESIGN_H - 360;
+    float kw = 13 * 72 - 8, kx = KEYBOARD_X, ky = KEYBOARD_Y;
     gfx_rect(kx - 30, ky - 30, kw + 60, 360, 18, SC_RGBA(20, 20, 22, 250));
     kb_draw(&kb, kx, ky);
   }
 }
 
-const screen login_screen = {enter, key, frame, text, 0};
+const screen login_screen = {enter, key, frame, text, 0, point};

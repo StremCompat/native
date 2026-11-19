@@ -18,6 +18,7 @@
 
 #define LEFT 176.0f
 #define CATS_Y 152.0f
+#define GROUP_HIT 1000 /* the groups' ids for the pointer, after the options' */
 #define PANE_X (LEFT + 390)
 #define PANE_W 1100.0f
 #define ITEM_H 80.0f
@@ -241,6 +242,17 @@ static void run_action(const item *it) {
   sb_free(&b);
 }
 
+/* the address typed in the server panel, kept */
+static void server_done(void) {
+  panel = P_NONE;
+  sbuf b = {0};
+  sb_add(&b, "{\"address\":");
+  sb_add_json_str(&b, kb.text);
+  sb_add(&b, "}");
+  net_request("/serverconfig", b.s, NET_HIGH, NULL, server_saved, NULL);
+  sb_free(&b);
+}
+
 static void key(app_key k) {
   if (nav_has_focus()) {
     nav_key(k);
@@ -248,15 +260,7 @@ static void key(app_key k) {
   }
   if (panel == P_SERVER) {
     if (k == K_BACK) panel = P_NONE;
-    else if (kb_key(&kb, k) == KB_DONE) {
-      panel = P_NONE;
-      sbuf b = {0};
-      sb_add(&b, "{\"address\":");
-      sb_add_json_str(&b, kb.text);
-      sb_add(&b, "}");
-      net_request("/serverconfig", b.s, NET_HIGH, NULL, server_saved, NULL);
-      sb_free(&b);
-    }
+    else if (kb_key(&kb, k) == KB_DONE) server_done();
     return;
   }
   if (panel) {
@@ -352,6 +356,7 @@ static void frame(double t, float dt) {
     if (out) y += 28;
     uint32_t back = f ? (out ? SC_RGBA(229, 72, 77, 255) : C_WHITE) : cur ? (out ? SC_RGBA(229, 72, 77, 41) : C_TEXT(0.1f)) : 0;
     if (back) gfx_rect(LEFT, y, 330, 59, 12, back);
+    hit_add(GROUP_HIT + g, LEFT, y, 330, 59);
     uint32_t fore = f ? (out ? C_WHITE : SC_RGBA(18, 16, 26, 255)) : out ? SC_RGBA(255, 138, 138, 255) : cur ? C_WHITE : C_TEXT(0.66f);
     text_draw_fit(groups[g].name, LEFT + 24, y + (59 - text_line_height(27)) / 2, 282, 27, W_SEMIBOLD, fore);
     y += 59 + 6;
@@ -372,9 +377,11 @@ static void frame(double t, float dt) {
   float at = item_at * (ITEM_H + 10);
   scroll = ui_approach(scroll, at > 560 ? at - 560 : 0, dt, 50);
   gfx_push_clip(PANE_X - 4, top - 4, PANE_W + 8, SC_DESIGN_H - top);
-  for (int i = 0; i < gr->n; i++)
-    draw_item(&gr->items[i], top + i * (ITEM_H + 10) - scroll, in_items && i == item_at && !nav_has_focus(),
-              !strcmp(gr->items[i].k, "__logout"));
+  for (int i = 0; i < gr->n; i++) {
+    float iy = top + i * (ITEM_H + 10) - scroll;
+    draw_item(&gr->items[i], iy, in_items && i == item_at && !nav_has_focus(), !strcmp(gr->items[i].k, "__logout"));
+    if (iy >= top - 4) hit_add(i, PANE_X, iy, PANE_W, ITEM_H);
+  }
   gfx_pop_clip();
   nav_draw(NAV_SETTINGS, dt);
   draw_panel();
@@ -387,4 +394,35 @@ static void enter(void) {
   api_get("/serverconfig", server_came, NULL);
 }
 
-const screen settings_screen = {enter, key, frame, NULL, 0};
+/* The pointer: the open panel first (its keyboard, or a click closes it); a click on a group shows
+   its options; passing over an option takes the focus, and a click does what OK does, except that a
+   choice steps to its next value at once. */
+static void point(float x, float y, int press) {
+  if (panel == P_SERVER) {
+    float kw = 13 * 72 - 8;
+    if (kb_point(&kb, x - (SC_DESIGN_W - kw) / 2, y - ((SC_DESIGN_H - 520) / 2 + 160), press) == KB_DONE) server_done();
+    return;
+  }
+  if (panel) {
+    if (press) panel = P_NONE;
+    return;
+  }
+  if (nav_point(x, y, press) || !loaded) return;
+  int id = hit_at(x, y);
+  if (id < 0) return;
+  if (nav_has_focus()) nav_key(K_RIGHT);
+  if (id >= GROUP_HIT) {
+    if (!press || id - GROUP_HIT == group_at) return;
+    group_at = id - GROUP_HIT, item_at = 0, in_items = editing = 0;
+    return;
+  }
+  if (editing) return;
+  in_items = 1;
+  item_at = id;
+  item *it = current();
+  if (!press || !it) return;
+  if (!it->action && !it->is_switch) step_value(it, 1);
+  else key(K_OK);
+}
+
+const screen settings_screen = {enter, key, frame, NULL, 0, point};

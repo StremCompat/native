@@ -44,6 +44,9 @@ static const char *kind_ids[KINDS] = {"all", "streams", "channels", "subtitles",
 static addon mine[MAX_ADDONS];
 static int nmine, loaded, in_store, armed = -1;
 static int at; /* 0..2 the buttons, then the installed addons */
+/* the pointer's ids: the buttons and addons as at; the store's cards and kinds after them */
+#define CARD_HIT 10000
+#define KIND_HIT 20000
 static float scroll;
 
 static store_card cards[MAX_STORE];
@@ -295,6 +298,7 @@ static void draw_store(float dt, int nav) {
     float w = text_width(label, 22, W_SEMIBOLD) + 44;
     int f = on_chips && i == kind && !nav, cur = i == kind;
     gfx_rect(x, y0, w, 50, 25, f ? C_WHITE : C_TEXT(cur ? 0.18f : 0.08f));
+    hit_add(KIND_HIT + i, x, y0, w, 50);
     ui_line(label, x + 22, y0, 50, 22, W_SEMIBOLD, f ? C_BG : C_WHITE);
     x += w + 12;
   }
@@ -306,6 +310,7 @@ static void draw_store(float dt, int nav) {
     float cy = gy + (i / 3) * (STORE_CARD_H + STORE_GAP) - store_scroll;
     if (cy + STORE_CARD_H < gy - 8 || cy > SC_DESIGN_H) continue;
     draw_card(&cards[i], LEFT + (i % 3) * (w + STORE_GAP), cy, w, i == card_at && !on_chips && !nav);
+    hit_add(CARD_HIT + i, LEFT + (i % 3) * (w + STORE_GAP), cy < gy - 8 ? gy - 8 : cy, w, STORE_CARD_H);
   }
   gfx_pop_clip();
   if (!ncards) text_draw(tx(store_loading ? "searching" : "storeUnavailable"), LEFT, gy + 10, 26, W_REGULAR, C_TEXT(0.72f));
@@ -341,6 +346,7 @@ static void frame(double t, float dt) {
     x -= w;
     int f = at == b && !nav;
     gfx_rect(x, TOP + 10, w, 62, 13, f ? C_WHITE : C_TEXT(0.14f));
+    hit_add(b, x, TOP + 10, w, 62);
     ui_line(labels[b], x + 30, TOP + 10, 62, 25, W_BOLD, f ? SC_RGBA(12, 11, 17, 255) : C_WHITE);
     x -= 14;
   }
@@ -354,6 +360,7 @@ static void frame(double t, float dt) {
     if (y + ITEM_H < LIST_Y - 4 || y > SC_DESIGN_H) continue;
     int f = at == i + BUTTONS && !nav;
     gfx_rect(LEFT, y, 1080, ITEM_H, 13, f ? C_TEXT(0.16f) : C_TEXT(0.045f));
+    hit_add(BUTTONS + i, LEFT, y, 1080, ITEM_H);
     if (f) gfx_outline(LEFT, y, 1080, ITEM_H, 13, 3, C_WHITE);
     text_draw_fit(mine[i].name, LEFT + 25, y + 18, 1030, 29, W_BOLD, C_WHITE);
     text_draw_fit(mine[i].info, LEFT + 25, y + 18 + 42, 1030, 21, W_REGULAR, C_TEXT(0.6f));
@@ -373,4 +380,35 @@ static void enter(void) {
   api_get("/app/addons", listed, NULL);
 }
 
-const screen addons_screen = {enter, key, frame, text, 0};
+/* The pointer: the address panel and the set-up code first (a click closes the code); then a click
+   on a button, an addon, a kind of the store or a store card does what OK does there. Passing over
+   them takes the focus, except where a new row would scroll the page under it. */
+static void point(float x, float y, int press) {
+  if (addr_active()) return addr_point(x, y, press);
+  if (in_store && qr) {
+    if (press) close_qr();
+    return;
+  }
+  if (nav_point(x, y, press)) return;
+  int id = hit_at(x, y);
+  if (id < 0) return;
+  if (nav_has_focus()) nav_key(K_RIGHT);
+  if (id >= KIND_HIT) {
+    if (!press) return;
+    on_chips = 1;
+    kind = id - KIND_HIT;
+    store_key(K_OK);
+  } else if (id >= CARD_HIT) {
+    if (!press && (on_chips || (id - CARD_HIT) / 3 != card_at / 3)) return;
+    on_chips = 0;
+    card_at = id - CARD_HIT;
+    if (press) store_key(K_OK);
+  } else {
+    if (!press && id >= BUTTONS && (id - BUTTONS > 4 || at - BUTTONS > 4)) return;
+    if (armed != id) armed = -1;
+    at = id;
+    if (press) activate();
+  }
+}
+
+const screen addons_screen = {enter, key, frame, text, 0, point};

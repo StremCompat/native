@@ -89,6 +89,7 @@ static void frame(double t, float dt) {
       if (x + WIDE_W < 128) continue;
       if (x > SC_DESIGN_W) break;
       ui_card(&dy->items[i], x, y + 59, 1, d == at && i == dy->col && !nav_has_focus());
+      hit_add(d * 1000 + i, x < 128 ? 128 : x, y + 59, x < 128 ? x + WIDE_W - 128 : WIDE_W, WIDE_H);
     }
   }
   gfx_pop_clip();
@@ -101,4 +102,16 @@ static void enter(void) {
   api_get("/app/calendar", came, (void *)(intptr_t)gen);
 }
 
-const screen calendar_screen = {enter, key, frame, NULL, 0};
+/* the pointer: passing over an episode of the day in focus takes the focus (another day would
+   scroll the page under it); a click opens it */
+static void point(float x, float y, int press) {
+  if (nav_point(x, y, press)) return;
+  int id = hit_at(x, y);
+  if (id < 0 || (!press && id / 1000 != at)) return;
+  if (nav_has_focus()) nav_key(K_RIGHT);
+  at = id / 1000;
+  days[at].col = id % 1000;
+  if (press) key(K_OK);
+}
+
+const screen calendar_screen = {enter, key, frame, NULL, 0, point};

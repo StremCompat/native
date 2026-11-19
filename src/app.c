@@ -101,8 +101,45 @@ static int is_ok(const SDL_Event *ev) {
   return k == SDLK_RETURN || k == SDLK_KP_ENTER;
 }
 
+/* a press of the Magic Remote can come as a click and as Enter: the Enter right after a click is
+   the same press. A click is told when the button comes up; held down, it opens the card menu as
+   holding OK does (K_MENU). */
+#define CLICK_ENTER_MS 250.0
+static double clicked_at = -1, button_down_at = -1;
+
+/* the Magic Remote's pointer: moving it puts the focus where it points, a click presses there */
+static void pointer(Uint32 window_id, int px, int py, int press) {
+  const screen *current = depth ? stack[depth - 1] : NULL;
+  SDL_Window *window = SDL_GetWindowFromID(window_id);
+  int w, h;
+  if (!current || !current->point || !window) return;
+  SDL_GetWindowSize(window, &w, &h);
+  if (w <= 0 || h <= 0) return;
+  if (press) clicked_at = last_frame;
+  current->point((float)px * SC_DESIGN_W / w, (float)py * SC_DESIGN_H / h, press);
+}
+
 void app_event(const SDL_Event *ev) {
-  if (ev->type == SDL_TEXTINPUT && depth && stack[depth - 1]->text) {
+  if (ev->type == SDL_MOUSEMOTION || ev->type == SDL_MOUSEBUTTONDOWN) {
+    last_key_at = last_frame;
+    if (saver_active()) {
+      saver_stop();
+      return;
+    }
+    if (ev->type == SDL_MOUSEMOTION) pointer(ev->motion.windowID, ev->motion.x, ev->motion.y, 0);
+    else if (ev->button.button == SDL_BUTTON_LEFT) button_down_at = last_frame;
+  } else if (ev->type == SDL_MOUSEBUTTONUP && ev->button.button == SDL_BUTTON_LEFT && button_down_at >= 0) {
+    int held = last_frame - button_down_at >= HOLD_MS;
+    button_down_at = -1;
+    /* the focus goes where the button was let go, then the press or the hold */
+    pointer(ev->button.windowID, ev->button.x, ev->button.y, !held);
+    if (held) {
+      clicked_at = last_frame;
+      on_key(K_MENU);
+    }
+  } else if (is_ok(ev) && last_frame - clicked_at < CLICK_ENTER_MS) {
+    ok_down_at = -1;
+  } else if (ev->type == SDL_TEXTINPUT && depth && stack[depth - 1]->text) {
     stack[depth - 1]->text(ev->text.text);
   } else if ((ev->type == SDL_KEYDOWN || ev->type == SDL_KEYUP) && is_ok(ev)) {
     if (ev->type == SDL_KEYDOWN && !ev->key.repeat) ok_down_at = last_frame, ok_held = 0;
@@ -175,6 +212,7 @@ void app_frame(int w, int h, double t) {
       platform_take_link(link_type, link_id, sizeof link_id))
     title_open(link_type, link_id);
   if (depth > 1 && stack[depth - 1]->overlay) stack[depth - 2]->frame(t, dt);
+  hit_reset();
   if (depth) stack[depth - 1]->frame(t, dt);
   ui_draw_toast(t);
   if (last_key_at < 0) last_key_at = t;
@@ -210,6 +248,14 @@ int app_run_script(const char *script_path, const char *shot_path) {
         } keys[] = {{"up", K_UP}, {"down", K_DOWN}, {"left", K_LEFT}, {"right", K_RIGHT}, {"ok", K_OK}, {"back", K_BACK}, {"menu", K_MENU}};
         for (size_t i = 0; i < sizeof keys / sizeof keys[0]; i++)
           if (!strcmp(arg, keys[i].name)) on_key(keys[i].key);
+        t += 16;
+      } else if (!strncmp(line, "move ", 5) || !strncmp(line, "click ", 6)) {
+        /* the pointer at a point of the 1920x1080 design, after a frame has laid out what it can press */
+        float px, py;
+        if (sscanf(strchr(line, ' ') + 1, "%f %f", &px, &py) == 2) {
+          settle(t);
+          if (depth && stack[depth - 1]->point) stack[depth - 1]->point(px, py, line[0] == 'c');
+        }
         t += 16;
       } else if (sscanf(line, "wait %399s", arg) == 1) {
         /* what the server answered by now counts from now, then time passes */

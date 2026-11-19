@@ -1,0 +1,16 @@
+wait 1500
+click 800 990
+wait 1500
+click 654 387
+wait 2500
+click 1358 258
+wait 800
+shot ptr-chip.png
+click 1500 440
+wait 3000
+move 960 700
+wait 300
+shot ptr-player.png
+click 100 1000
+wait 300
+shot ptr-player-click.png
