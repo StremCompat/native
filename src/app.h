@@ -21,6 +21,8 @@ int app_start(void);
 void app_ready(void);
 /* Settings > Interface: the Magic Remote pointer on or off */
 void app_set_pointer(int on);
+/* another profile was chosen: the rail shows its face */
+void app_refresh_face(void);
 /* the TV's language as "pt-BR", or "" */
 const char *app_language(void);
 

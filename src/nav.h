@@ -16,6 +16,7 @@ typedef enum {
   NAV_SETTINGS,
   NAV_UPDATE, /* only while a newer version exists */
   NAV_LEAVE,
+  NAV_PROFILE, /* the face at the top: who is watching (Nuvio), or the account (Stremio) */
   NAV_COUNT
 } nav_item;
 
@@ -32,5 +33,7 @@ void nav_draw(nav_item current, float dt);
 void nav_offer_update(const char *version);
 /* the Calendar is for Stremio accounts; a Nuvio one does not show it */
 void nav_show_calendar(int shown);
+/* the profile at the top: its name, colour (#rrggbb) and picture; nuvio 1 when it can be switched */
+void nav_set_face(const char *name, const char *color, const char *avatar, int nuvio);
 
 #endif

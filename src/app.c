@@ -217,6 +217,20 @@ int app_start(void) {
   return 0;
 }
 
+/* the profile at the top of the rail, from the state's face (a Stremio account: its e-mail's letter) */
+static void show_face(const jval *st) {
+  const jval *face = json_get(st, "face");
+  nav_set_face(json_str(json_get(face, "name"), json_str(json_get(st, "email"), "")), json_str(json_get(face, "color"), NULL),
+               json_str(json_get(face, "avatar"), ""), !strcmp(json_str(json_get(st, "provider"), ""), "nuvio"));
+}
+
+static void face_came(const jval *answer, void *user) {
+  (void)user;
+  if (answer) show_face(answer);
+}
+
+void app_refresh_face(void) { api_get("/app/state", face_came, NULL); }
+
 void app_ready(void) {
   /* the server is told the TV's language for the texts that follow */
   char path[96];
@@ -236,6 +250,7 @@ void app_ready(void) {
   const jval *st = json_root(d);
   nav_show_calendar(strcmp(json_str(json_get(st, "provider"), ""), "nuvio") != 0);
   app_set_pointer(json_bool(json_get(st, "pointer"), 1));
+  show_face(st);
   if (!json_bool(json_get(st, "signedIn"), 0)) app_show(&login_screen);
   else if (!strcmp(json_str(json_get(st, "provider"), ""), "nuvio")) profiles_open(1);
   else app_show(&home_screen);

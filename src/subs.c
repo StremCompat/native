@@ -48,8 +48,33 @@ static void add_cues(const jval *list) {
 }
 
 /* two languages are the same when their first two letters are (por / pt, eng / en) */
+/* A language as two letters, whatever the file or the addon gave: "pt-BR", "por" and "pob" are all
+   "pt" (comparing the first two letters took "por" for "po", not Portuguese). "" when unknown. */
+void subs_lang_code(const char *lang, char out[3]) {
+  static const char *three[][2] = {{"por", "pt"}, {"pob", "pt"}, {"eng", "en"}, {"spa", "es"}, {"fre", "fr"},
+                                   {"fra", "fr"}, {"ita", "it"}, {"ger", "de"}, {"deu", "de"}, {"jpn", "ja"},
+                                   {"kor", "ko"}, {"chi", "zh"}, {"zho", "zh"}, {"rus", "ru"}, {"ara", "ar"},
+                                   {"hin", "hi"}, {"tur", "tr"}, {"pol", "pl"}, {"dut", "nl"}, {"nld", "nl"},
+                                   {"swe", "sv"}, {"dan", "da"}, {"nor", "no"}, {"fin", "fi"}, {"gre", "el"},
+                                   {"ell", "el"}, {"heb", "he"}, {"rum", "ro"}, {"ron", "ro"}, {"hun", "hu"},
+                                   {"cze", "cs"}, {"ces", "cs"}, {"tha", "th"}, {"vie", "vi"}, {"ind", "id"}};
+  char low[4] = {0};
+  for (int i = 0; i < 3 && lang && lang[i]; i++) low[i] = (char)tolower((unsigned char)lang[i]);
+  out[0] = out[1] = out[2] = 0;
+  if (!low[0] || !low[1]) return;
+  for (size_t i = 0; i < sizeof three / sizeof three[0]; i++)
+    if (!strcmp(low, three[i][0])) {
+      memcpy(out, three[i][1], 2);
+      return;
+    }
+  out[0] = low[0], out[1] = low[1];
+}
+
 static int same_language(const char *a, const char *b) {
-  return a && b && *a && *b && !strncmp(a, b, 2);
+  char x[3], y[3];
+  subs_lang_code(a, x);
+  subs_lang_code(b, y);
+  return x[0] && !strcmp(x, y);
 }
 
 /* full subtitles before those for the hard of hearing, then forced ones (only the foreign lines),

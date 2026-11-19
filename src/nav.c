@@ -1,10 +1,13 @@
 #include "nav.h"
 
+#include <ctype.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "api.h"
 #include "screens.h"
 #include "gfx.h"
+#include "img.h"
 #include "text.h"
 #include "ui.h"
 #include "util.h"
@@ -24,12 +27,28 @@ static const struct {
     {ICON_SEARCH, "navSearch"},     {ICON_HOME, "navHome"},         {ICON_DISCOVER, "navDiscover"},
     {ICON_LIBRARY, "navLibrary"},   {ICON_CALENDAR, "navCalendar"}, {ICON_CHANNELS, "navChannels"},
     {ICON_ADDONS, "navAddons"},     {ICON_SETTINGS, "navSettings"}, {ICON_UPDATE, "updateNav"},
-    {ICON_LEAVE, "exitLeave"},
+    {ICON_LEAVE, "exitLeave"},       {ICON_SETTINGS, "nuvioProfile"},
 };
+#define FACE_X 38.0f
+#define FACE_Y 38.0f
+#define FACE 52.0f
 
 static int focused = -1; /* the chip with the focus, or -1 while the screen has it */
 static char update_version[32];
 static int calendar_shown = 1;
+
+static char face_name[96], face_avatar[512];
+static uint32_t face_color = SC_RGBA(30, 136, 229, 255);
+static int face_nuvio;
+
+void nav_set_face(const char *name, const char *color, const char *avatar, int nuvio) {
+  unsigned v = 0x1E88E5;
+  snprintf(face_name, sizeof face_name, "%s", name ? name : "");
+  snprintf(face_avatar, sizeof face_avatar, "%s", avatar ? avatar : "");
+  if (color && color[0] == '#') sscanf(color + 1, "%6x", &v);
+  face_color = SC_RGBA((v >> 16) & 255, (v >> 8) & 255, v & 255, 255);
+  face_nuvio = nuvio;
+}
 
 void nav_offer_update(const char *version) { snprintf(update_version, sizeof update_version, "%s", version); }
 void nav_show_calendar(int shown) { calendar_shown = shown; }
@@ -43,8 +62,11 @@ void nav_focus(nav_item current) { focused = (int)current; }
 int nav_has_focus(void) { return focused >= 0; }
 
 int nav_key(app_key k) {
-  if (k == K_UP && focused > 0) focused -= present(focused - 1) ? 1 : 2;
-  else if (k == K_DOWN && focused < NAV_COUNT - 1) focused += present(focused + 1) ? 1 : 2;
+  /* the profile sits above the first section and leaving below the last */
+  if (k == K_UP && focused == NAV_SEARCH) focused = NAV_PROFILE;
+  else if (k == K_DOWN && focused == NAV_PROFILE) focused = NAV_SEARCH;
+  else if (k == K_UP && focused > 0 && focused != NAV_PROFILE) focused -= present(focused - 1) ? 1 : 2;
+  else if (k == K_DOWN && focused < NAV_LEAVE) focused += present(focused + 1) ? 1 : 2;
   else if (k == K_RIGHT || k == K_BACK) focused = -1;
   else if (k == K_OK) {
     int chosen = focused;
@@ -60,6 +82,8 @@ int nav_key(app_key k) {
     else if (chosen == NAV_CALENDAR) app_show(&calendar_screen);
     else if (chosen == NAV_CHANNELS) app_show(&channels_screen);
     else if (chosen == NAV_UPDATE) update_start();
+    else if (chosen == NAV_PROFILE && face_nuvio) profiles_open(0);
+    else if (chosen == NAV_PROFILE) app_show(&settings_screen);
     return chosen;
   }
   return -1;
@@ -67,6 +91,7 @@ int nav_key(app_key k) {
 
 /* the sections centred, closing up where one is not shown (the Calendar for Nuvio) */
 static float chip_y(int i) {
+  if (i == NAV_PROFILE) return FACE_Y - (CHIP_H - FACE) / 2;
   if (i == NAV_LEAVE) return SC_DESIGN_H - 34 - CHIP_H;
   if (i == NAV_UPDATE) return SC_DESIGN_H - 98 - CHIP_H;
   int shown = 0, at = 0;
@@ -105,10 +130,27 @@ void nav_draw(nav_item current, float dt) {
     gfx_gradient(PANEL_W * 0.62f, 0, PANEL_W * 0.38f, SC_DESIGN_H, 0, SC_RGBA(10, 10, 11, 250), SC_RGBA(10, 10, 11, 0), 0);
     gfx_pop_opacity();
   }
-  /* the profile at the top */
-  gfx_outline(38, 38, 52, 52, 26, 3, C_TEXT(0.18f));
+  /* the profile at the top: its picture, or its first letter on its colour */
+  const sc_tex *pic = face_avatar[0] ? img_get(face_avatar, (int)FACE, NULL) : NULL;
+  if (pic) gfx_image(pic, FACE_X, FACE_Y, FACE, FACE, FACE / 2, 1, COVER);
+  else if (face_name[0]) {
+    char initial[8] = {0};
+    size_t n = 1;
+    while (n < 4 && ((unsigned char)face_name[n] & 0xC0) == 0x80) n++; /* a whole UTF-8 letter */
+    memcpy(initial, face_name, n);
+    if (n == 1) initial[0] = (char)toupper((unsigned char)initial[0]);
+    gfx_rect(FACE_X, FACE_Y, FACE, FACE, FACE / 2, face_color);
+    float w = text_width(initial, 24, W_BOLD);
+    ui_line(initial, FACE_X + (FACE - w) / 2, FACE_Y, FACE, 24, W_BOLD, C_WHITE);
+  } else gfx_outline(FACE_X, FACE_Y, FACE, FACE, FACE / 2, 3, C_TEXT(0.18f));
+  if (focused == NAV_PROFILE) gfx_outline(FACE_X - 5, FACE_Y - 5, FACE + 10, FACE + 10, FACE / 2 + 5, 3, C_WHITE);
+  if (open > 0 && face_name[0]) {
+    gfx_push_opacity(open);
+    text_draw(face_name, CHIP_X + 84, FACE_Y + FACE / 2 - 17 + 1, 26, W_BOLD, focused == NAV_PROFILE ? C_WHITE : C_TEXT(0.72f));
+    gfx_pop_opacity();
+  }
   for (int i = 0; i < NAV_COUNT; i++) {
-    if (!present(i)) continue;
+    if (!present(i) || i == NAV_PROFILE) continue;
     float y = chip_y(i);
     int is_focus = i == focused, is_current = i == (int)current;
     uint32_t chip = 0, icon = C_TEXT(0.6f);

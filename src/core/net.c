@@ -27,8 +27,8 @@ typedef int sock_t;
 /* Each lane has workers of its own, so the screens' data never waits behind pictures (whose workers
    also decode them) or behind a slow addon: with three shared workers, a Home's catalogs queued
    behind its covers and backdrops on a TV's processor. */
-static const int LANE_WORKERS[3] = {4, 3, 2}; /* NET_HIGH (the screens' data), NET_LOW (pictures), NET_SLOW */
-#define MAX_WORKERS 9
+static const int LANE_WORKERS[3] = {4, 3, 4}; /* NET_HIGH (the screens' data), NET_LOW (pictures), NET_SLOW */
+#define MAX_WORKERS 11
 
 typedef struct job job;
 struct job {

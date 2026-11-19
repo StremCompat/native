@@ -14,6 +14,8 @@ typedef struct {
 void subs_reset(const char *type, const char *id, const char *vid, const char *ref, const char *video_url,
                 const char *want, int forced_only);
 int subs_count(void);
+/* a subtitle's language as two letters ("pt" for "por", "pob" or "pt-BR"), "" when unknown */
+void subs_lang_code(const char *lang, char out[3]);
 const sub_choice *subs_at(int i);
 /* the one shown, or -1 for none */
 int subs_current(void);

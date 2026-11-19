@@ -49,7 +49,8 @@ static uint32_t sub_color = 0xFFFFFFFF, sub_outline = 0x000000FF;
 static int auto_next_count;
 
 /* the menu over the buttons: what it lists, and the episodes and sources it got for that */
-enum { VIEW_MEDIA, VIEW_AUDIO, VIEW_SUBS, VIEW_EPISODES, VIEW_SOURCES, VIEW_SETTINGS, VIEW_SPEED, VIEW_DELAY, VIEW_CHAPTERS };
+enum { VIEW_MEDIA, VIEW_AUDIO, VIEW_SUBS, VIEW_EPISODES, VIEW_SOURCES, VIEW_SETTINGS, VIEW_SPEED, VIEW_DELAY, VIEW_CHAPTERS,
+       VIEW_SUBS_LANGUAGE };
 
 /* the settings button: speed, subtitle delay, and the chapters when the file has some */
 static const double speeds[] = {0.75, 1, 1.25, 1.5};
@@ -489,22 +490,17 @@ static void move_button(int dir) {
 #define ROW_WAIT -100
 #define ROW_OFF -101
 
-/* a track's language by name, as the media service gives only its code */
+/* a track's language by name, as the media service and the addons give only its code */
 static const char *language_name(const char *code) {
   static const char *names[][2] = {{"en", "English"}, {"pt", "Português"},  {"es", "Español"}, {"fr", "Français"},
                                    {"de", "Deutsch"}, {"it", "Italiano"},   {"ja", "日本語"},  {"ko", "한국어"},
                                    {"zh", "中文"},    {"ru", "Русский"},    {"hi", "हिन्दी"},   {"nl", "Nederlands"},
                                    {"pl", "Polski"},  {"tr", "Türkçe"},     {"sv", "Svenska"}, {"ar", "العربية"}};
-  static const char *three[][2] = {{"eng", "en"}, {"por", "pt"}, {"spa", "es"}, {"fre", "fr"}, {"fra", "fr"},
-                                   {"ger", "de"}, {"deu", "de"}, {"ita", "it"}, {"jpn", "ja"}, {"kor", "ko"},
-                                   {"chi", "zh"}, {"zho", "zh"}, {"rus", "ru"}, {"hin", "hi"}, {"dut", "nl"},
-                                   {"nld", "nl"}, {"pol", "pl"}, {"tur", "tr"}, {"swe", "sv"}, {"ara", "ar"}};
-  char two[3] = {0};
-  for (size_t i = 0; i < sizeof three / sizeof three[0]; i++)
-    if (!strcmp(code, three[i][0])) code = three[i][1];
-  memcpy(two, code, strlen(code) < 2 ? strlen(code) : 2);
+  char two[3];
+  subs_lang_code(code, two);
+  if (!two[0]) return tx("langOther");
   for (size_t i = 0; i < sizeof names / sizeof names[0]; i++)
-    if (!strcmp(two, names[i][0]) && strlen(code) <= 3) return names[i][1];
+    if (!strcmp(two, names[i][0])) return names[i][1];
   return code;
 }
 
@@ -512,6 +508,26 @@ static const char *audio_name(void) {
   static player_track t[PLAYER_MAX_TRACKS];
   int n = player_audio_tracks(t, PLAYER_MAX_TRACKS), at = player_audio_current();
   return at < n && t[at].language[0] ? language_name(t[at].language) : txp("defaultAudio", NULL);
+}
+
+/* The subtitles by language, as the web player shows them: each language once, with how many it has,
+   then its subtitles. */
+#define LANGUAGE_ROW 1000
+static char sub_languages[MENU_MAX][3];
+static int nsub_languages, sub_language_at;
+
+static int sub_language_of(int track) {
+  char code[3];
+  subs_lang_code(subs_at(track)->lang, code);
+  for (int g = 0; g < nsub_languages; g++)
+    if (!strcmp(sub_languages[g], code)) return g;
+  return -1;
+}
+
+static void list_sub_languages(void) {
+  nsub_languages = 0;
+  for (int i = 0; i < subs_count() && nsub_languages < MENU_MAX; i++)
+    if (sub_language_of(i) < 0) subs_lang_code(subs_at(i)->lang, sub_languages[nsub_languages++]);
 }
 
 static void open_view(int which) {
@@ -572,7 +588,21 @@ static void open_view(int which) {
   } else if (which == VIEW_SUBS) {
     menu_begin(&list, txp("subtitles", NULL));
     menu_add(&list, txp("off", NULL), subs_current() < 0, ROW_OFF);
-    for (int i = 0; i < subs_count(); i++) menu_add(&list, subs_at(i)->name, i == subs_current(), i);
+    list_sub_languages();
+    if (nsub_languages <= 1)
+      for (int i = 0; i < subs_count(); i++) menu_add(&list, subs_at(i)->name, i == subs_current(), i);
+    else
+      for (int g = 0; g < nsub_languages; g++) {
+        int count = 0;
+        for (int i = 0; i < subs_count(); i++) count += sub_language_of(i) == g;
+        char row[160];
+        snprintf(row, sizeof row, "%s  \xC2\xB7  %d \xE2\x80\xBA", language_name(sub_languages[g]), count);
+        menu_add(&list, row, subs_current() >= 0 && sub_language_of(subs_current()) == g, LANGUAGE_ROW + g);
+      }
+  } else if (which == VIEW_SUBS_LANGUAGE) {
+    menu_begin(&list, language_name(sub_languages[sub_language_at]));
+    for (int i = 0; i < subs_count(); i++)
+      if (sub_language_of(i) == sub_language_at) menu_add(&list, subs_at(i)->name, i == subs_current(), i);
   }
   list.open = 1;
 }
@@ -649,8 +679,17 @@ static void choose(int id) {
     player_seek(chapter_at[id] * 1000);
     report("seek");
   }
+  if (view == VIEW_SUBS && id >= LANGUAGE_ROW) {
+    /* a language with one subtitle is that subtitle; otherwise its list */
+    sub_language_at = id - LANGUAGE_ROW;
+    int only = -1, count = 0;
+    for (int i = 0; i < subs_count(); i++)
+      if (sub_language_of(i) == sub_language_at) only = i, count++;
+    if (count != 1) return open_view(VIEW_SUBS_LANGUAGE);
+    id = only;
+  }
   if (view == VIEW_AUDIO) player_select_audio(id);
-  else if (view == VIEW_SUBS) subs_choose(id), subs_remember(id);
+  else if (view == VIEW_SUBS || view == VIEW_SUBS_LANGUAGE) subs_choose(id), subs_remember(id);
   else if (view == VIEW_EPISODES && episode_ids[id] && strcmp(episode_ids[id], info.vid ? info.vid : "")) {
     char *type = str_dup(info.type), *title = str_dup(info.id), *episode = str_dup(episode_ids[id]);
     leave();

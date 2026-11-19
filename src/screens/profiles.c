@@ -123,6 +123,7 @@ static void used(const jval *answer, void *user) {
   if ((intptr_t)user != gen) return;
   busy = 0;
   if (json_bool(json_get(answer, "ok"), 0)) {
+    app_refresh_face();
     home_reload();
     app_show(&home_screen);
     return;
