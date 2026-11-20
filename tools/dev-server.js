@@ -85,7 +85,7 @@ var manifest = {
   id: 'dev.addon',
   name: 'Development',
   version: '1.0.0',
-  resources: ['catalog', 'meta', 'stream'],
+  resources: ['catalog', 'meta', 'stream', 'subtitles'],
   types: ['movie', 'series', 'tv'],
   idPrefixes: ['dev'],
   catalogs: [
@@ -174,6 +174,24 @@ var addon = http.createServer(function (req, res) {
     return res.end(pic[1] === 'poster' ? png(300, 450, color, dark) : png(1280, 720, color, dark));
   }
   var streams = /^\/stream\/(movie|series)\/[^/]+\.json$/.test(url);
+  /* subtitles: two in Portuguese and one in English, each a file of its own */
+  var sub = /^\/sub(\d)\.srt$/.exec(url);
+  if (sub) {
+    res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+    return res.end('1\n00:00:00,000 --> 01:00:00,000\nSubtitle ' + sub[1] + ': ninguém sabe o que aconteceu naquela noite.\n');
+  }
+  if (/^\/subtitles\/(movie|series)\//.test(url)) {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(
+      JSON.stringify({
+        subtitles: [
+          { id: 's1', url: base + '/sub1.srt', lang: 'por' },
+          { id: 's2', url: base + '/sub2.srt', lang: 'pob' },
+          { id: 's3', url: base + '/sub3.srt', lang: 'eng' }
+        ]
+      })
+    );
+  }
   /* search: every title of a type whose name has the words */
   var found = /^\/catalog\/(movie|series)\/top\/search=([^/]+)\.json$/.exec(url);
   if (found) {

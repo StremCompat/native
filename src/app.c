@@ -313,7 +313,7 @@ int app_run_script(const char *script_path, const char *shot_path) {
         static const struct {
           const char *name;
           app_key key;
-        } keys[] = {{"up", K_UP}, {"down", K_DOWN}, {"left", K_LEFT}, {"right", K_RIGHT}, {"ok", K_OK}, {"back", K_BACK}, {"menu", K_MENU}};
+        } keys[] = {{"up", K_UP}, {"down", K_DOWN}, {"left", K_LEFT}, {"right", K_RIGHT}, {"ok", K_OK}, {"back", K_BACK}, {"menu", K_MENU}, {"red", K_RED}};
         for (size_t i = 0; i < sizeof keys / sizeof keys[0]; i++)
           if (!strcmp(arg, keys[i].name)) on_key(keys[i].key);
         t += 16;

@@ -1,0 +1,15 @@
+wait 1500
+click 800 990
+wait 1500
+click 654 387
+wait 2500
+click 1358 258
+wait 800
+click 1500 440
+move 205 990
+wait 300
+click 205 990
+wait 200
+shot player-sources-early.png
+wait 3000
+shot player-sources.png

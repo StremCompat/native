@@ -104,10 +104,12 @@ static void decide(void) {
   subs_choose(best);
 }
 
-static void add_choice(const char *name, const char *lang, const char *url, int embedded, int stream, const char *kind) {
+static void add_choice(const char *name, const char *lang, const char *url, const char *src, int embedded, int stream,
+                       const char *kind) {
   if (nchoices >= MAX_CHOICES) return;
   sub_choice *c = &choices[nchoices++];
   c->name = copy(name);
+  c->src = copy(src);
   c->lang = copy(lang);
   c->url = copy(url);
   c->embedded = embedded;
@@ -122,7 +124,8 @@ static void addon_list(const jval *answer, void *user) {
     const jval *s = json_at(list, i);
     char name[160];
     snprintf(name, sizeof name, "%s  \xC2\xB7  %s", json_str(json_get(s, "name"), ""), json_str(json_get(s, "src"), ""));
-    add_choice(name, json_str(json_get(s, "lang"), ""), json_str(json_get(s, "u"), ""), 0, 0, "");
+    add_choice(name, json_str(json_get(s, "lang"), ""), json_str(json_get(s, "u"), ""), json_str(json_get(s, "src"), ""), 0, 0,
+               "");
   }
   decide();
 }
@@ -132,7 +135,7 @@ static void file_list(const jval *answer, void *user) {
   if ((intptr_t)user != gen) return;
   for (int i = 0; i < json_len(list); i++) {
     const jval *t = json_at(list, i);
-    add_choice(json_str(json_get(t, "name"), ""), json_str(json_get(t, "lang"), ""), NULL, 1,
+    add_choice(json_str(json_get(t, "name"), ""), json_str(json_get(t, "lang"), ""), NULL, "", 1,
                (int)json_num(json_get(t, "n"), 0), json_str(json_get(t, "kind"), ""));
   }
   decide();
@@ -145,6 +148,7 @@ void subs_reset(const char *t, const char *title_id, const char *video_id, const
     free(choices[i].name);
     free(choices[i].lang);
     free(choices[i].url);
+    free(choices[i].src);
   }
   nchoices = decided = 0;
   current = -1;
@@ -172,6 +176,7 @@ void subs_reset(const char *t, const char *title_id, const char *video_id, const
 }
 
 int subs_count(void) { return nchoices; }
+const char *subs_wanted(void) { return want ? want : ""; }
 const sub_choice *subs_at(int i) { return i >= 0 && i < nchoices ? &choices[i] : NULL; }
 int subs_current(void) { return current; }
 

@@ -5,6 +5,7 @@
 
 typedef struct {
   char *name, *lang, *url; /* url: an addon's file; embedded ones are read out of the video */
+  char *src;               /* the addon it came from ("" for the file's own) */
   int embedded, stream;    /* the subtitle stream's number in the file */
   int rank;                /* for the first choice: 0 full, 1 SDH, 2 forced, 3 commentary */
 } sub_choice;
@@ -14,6 +15,8 @@ typedef struct {
 void subs_reset(const char *type, const char *id, const char *vid, const char *ref, const char *video_url,
                 const char *want, int forced_only);
 int subs_count(void);
+/* the language wanted first ("" none) */
+const char *subs_wanted(void);
 /* a subtitle's language as two letters ("pt" for "por", "pob" or "pt-BR"), "" when unknown */
 void subs_lang_code(const char *lang, char out[3]);
 const sub_choice *subs_at(int i);

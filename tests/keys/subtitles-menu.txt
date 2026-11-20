@@ -1,0 +1,21 @@
+wait 1500
+click 800 990
+wait 1500
+click 654 387
+wait 2500
+click 1358 258
+wait 800
+click 1500 440
+wait 3000
+key red
+wait 800
+shot subs-languages.png
+key ok
+wait 300
+shot subs-language.png
+key ok
+wait 300
+shot subs-addon.png
+key ok
+wait 1500
+shot subs-shown.png
