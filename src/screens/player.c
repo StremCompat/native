@@ -41,7 +41,7 @@ static int live; /* a channel: no length, no seeking, nothing kept */
 static double seen_at, seen_len;
 
 /* Settings > Subtitles: their size, colour, outline and background strength */
-static float sub_size = 38, sub_background;
+static float sub_size = 57, sub_background;
 static uint32_t sub_color = 0xFFFFFFFF, sub_outline = 0x000000FF;
 
 /* episodes started by the countdown with nobody touching the remote; at 3 it asks first */
@@ -50,7 +50,7 @@ static int auto_next_count;
 
 /* the menu over the buttons: what it lists, and the episodes and sources it got for that */
 enum { VIEW_MEDIA, VIEW_AUDIO, VIEW_SUBS, VIEW_EPISODES, VIEW_SOURCES, VIEW_SETTINGS, VIEW_SPEED, VIEW_DELAY, VIEW_CHAPTERS,
-       VIEW_SUBS_LANGUAGE };
+       VIEW_SUBS_LANGUAGE, VIEW_SUBS_ADDON };
 
 /* the settings button: speed, subtitle delay, and the chapters when the file has some */
 static const double speeds[] = {0.75, 1, 1.25, 1.5};
@@ -288,7 +288,7 @@ static void started(const jval *answer, void *user) {
   }
   seek_step = (int)json_num(json_get(answer, "seekStep"), 10);
   const jval *style = json_get(answer, "subtitleStyle");
-  sub_size = (float)json_num(json_get(style, "size"), 38);
+  sub_size = (float)json_num(json_get(style, "size"), 57);
   sub_color = hex_color(json_str(json_get(style, "color"), "#ffffff"));
   sub_outline = hex_color(json_str(json_get(style, "outline"), "#000000"));
   sub_background = (float)json_num(json_get(style, "background"), 0);
@@ -510,11 +510,13 @@ static const char *audio_name(void) {
   return at < n && t[at].language[0] ? language_name(t[at].language) : txp("defaultAudio", NULL);
 }
 
-/* The subtitles by language, as the web player shows them: each language once, with how many it has,
-   then its subtitles. */
+/* The subtitles as the web player shows them: each language once (the one wanted first), then in a
+   language the file's own tracks and each addon, then an addon's subtitles when it has several. A
+   language or an addon with one subtitle is that subtitle. */
 #define LANGUAGE_ROW 1000
+#define ADDON_ROW 2000
 static char sub_languages[MENU_MAX][3];
-static int nsub_languages, sub_language_at;
+static int nsub_languages, sub_language_at, sub_addon_at;
 
 static int sub_language_of(int track) {
   char code[3];
@@ -525,9 +527,65 @@ static int sub_language_of(int track) {
 }
 
 static void list_sub_languages(void) {
+  char wanted[3];
+  subs_lang_code(subs_wanted(), wanted);
   nsub_languages = 0;
-  for (int i = 0; i < subs_count() && nsub_languages < MENU_MAX; i++)
-    if (sub_language_of(i) < 0) subs_lang_code(subs_at(i)->lang, sub_languages[nsub_languages++]);
+  /* the wanted language first, then the others as they came */
+  for (int pass = 0; pass < 2; pass++)
+    for (int i = 0; i < subs_count() && nsub_languages < MENU_MAX; i++) {
+      char code[3];
+      subs_lang_code(subs_at(i)->lang, code);
+      if ((pass == 0) != (wanted[0] && !strcmp(code, wanted)) || sub_language_of(i) >= 0) continue;
+      memcpy(sub_languages[nsub_languages++], code, 3);
+    }
+}
+
+static int sub_language_count(int g, int *only) {
+  int count = 0;
+  for (int i = 0; i < subs_count(); i++)
+    if (sub_language_of(i) == g) *only = i, count++;
+  return count;
+}
+
+/* the groups of the open language: each of the file's own tracks alone, then one per addon */
+static int sub_group_first[MENU_MAX], sub_group_count[MENU_MAX], nsub_groups;
+
+static int in_sub_group(int g, int i) {
+  const sub_choice *a = subs_at(sub_group_first[g]), *b = subs_at(i);
+  if (a->embedded || b->embedded) return i == sub_group_first[g];
+  return sub_language_of(i) == sub_language_at && !strcmp(a->src ? a->src : "", b->src ? b->src : "");
+}
+
+static void list_sub_groups(void) {
+  nsub_groups = 0;
+  for (int pass = 0; pass < 2; pass++)
+    for (int i = 0; i < subs_count() && nsub_groups < MENU_MAX; i++) {
+      if (sub_language_of(i) != sub_language_at || (pass == 0) != !!subs_at(i)->embedded) continue;
+      int g = -1;
+      for (int k = 0; k < nsub_groups && g < 0; k++)
+        if (in_sub_group(k, i)) g = k;
+      if (g >= 0) sub_group_count[g]++;
+      else sub_group_first[nsub_groups] = i, sub_group_count[nsub_groups++] = 1;
+    }
+}
+
+static int sub_group_shown(int g) {
+  for (int i = 0; i < subs_count(); i++)
+    if (in_sub_group(g, i) && i == subs_current()) return 1;
+  return 0;
+}
+
+/* a group's row: the file's own track by its title ("Embedded · Forced"), an addon by its name */
+static void sub_group_label(int g, char *row, size_t size) {
+  const sub_choice *c = subs_at(sub_group_first[g]);
+  const char *addon = c->src && *c->src ? c->src : txp("external", NULL);
+  if (c->embedded) {
+    const char *title = c->name ? strstr(c->name, " \xE2\x80\x94 ") : NULL;
+    snprintf(row, size, "%s%s%.120s", txp("embedded", NULL), title ? "  \xC2\xB7  " : "", title ? title + 5 : "");
+  } else if (sub_group_count[g] > 1)
+    snprintf(row, size, "%.120s  \xC2\xB7  %d \xE2\x80\xBA", addon, sub_group_count[g]);
+  else
+    snprintf(row, size, "%.120s", addon);
 }
 
 static void open_view(int which) {
@@ -589,20 +647,35 @@ static void open_view(int which) {
     menu_begin(&list, txp("subtitles", NULL));
     menu_add(&list, txp("off", NULL), subs_current() < 0, ROW_OFF);
     list_sub_languages();
-    if (nsub_languages <= 1)
-      for (int i = 0; i < subs_count(); i++) menu_add(&list, subs_at(i)->name, i == subs_current(), i);
-    else
-      for (int g = 0; g < nsub_languages; g++) {
-        int count = 0;
-        for (int i = 0; i < subs_count(); i++) count += sub_language_of(i) == g;
-        char row[160];
-        snprintf(row, sizeof row, "%s  \xC2\xB7  %d \xE2\x80\xBA", language_name(sub_languages[g]), count);
-        menu_add(&list, row, subs_current() >= 0 && sub_language_of(subs_current()) == g, LANGUAGE_ROW + g);
+    for (int g = 0; g < nsub_languages; g++) {
+      int only = -1, count = sub_language_count(g, &only), on = subs_current() >= 0 && sub_language_of(subs_current()) == g;
+      char row[160];
+      if (count == 1) {
+        menu_add(&list, language_name(sub_languages[g]), on, only);
+        continue;
       }
+      snprintf(row, sizeof row, "%s  \xC2\xB7  %d \xE2\x80\xBA", language_name(sub_languages[g]), count);
+      menu_add(&list, row, on, LANGUAGE_ROW + g);
+    }
   } else if (which == VIEW_SUBS_LANGUAGE) {
     menu_begin(&list, language_name(sub_languages[sub_language_at]));
-    for (int i = 0; i < subs_count(); i++)
-      if (sub_language_of(i) == sub_language_at) menu_add(&list, subs_at(i)->name, i == subs_current(), i);
+    list_sub_groups();
+    for (int g = 0; g < nsub_groups; g++) {
+      char row[200];
+      sub_group_label(g, row, sizeof row);
+      menu_add(&list, row, sub_group_shown(g), sub_group_count[g] > 1 ? ADDON_ROW + g : sub_group_first[g]);
+    }
+  } else if (which == VIEW_SUBS_ADDON) {
+    const sub_choice *c = subs_at(sub_group_first[sub_addon_at]);
+    char title[200];
+    snprintf(title, sizeof title, "%s  \xC2\xB7  %.120s", language_name(sub_languages[sub_language_at]), c->src ? c->src : "");
+    menu_begin(&list, title);
+    for (int i = 0, k = 0; i < subs_count(); i++)
+      if (in_sub_group(sub_addon_at, i)) {
+        char row[160];
+        snprintf(row, sizeof row, "%s %d", language_name(sub_languages[sub_language_at]), ++k);
+        menu_add(&list, row, i == subs_current(), i);
+      }
   }
   list.open = 1;
 }
@@ -628,9 +701,27 @@ static void episodes_came(const jval *answer, void *user) {
 
 /* the sources of this video, as the sources panel lists them */
 static int source_seqs[MENU_MAX];
+static void sources_came(const jval *answer, void *user);
+
+/* asks for the sources again once the search has more than the version given (the server holds the
+   question until then) */
+static void sources_ask(int have) {
+  sbuf p = {0};
+  sb_add(&p, "/app/streams?type=");
+  sb_add_url(&p, info.type);
+  sb_add(&p, "&vid=");
+  sb_add_url(&p, info.vid ? info.vid : info.id);
+  sb_addf(&p, "&have=%d", have);
+  api_get(p.s, sources_came, (void *)(intptr_t)gen);
+  sb_free(&p);
+}
+
+/* The sources as the addons answer: the list grows until the search ends, with the row in focus
+   kept. Only the first answer was shown before, often empty while the addons were still asked. */
 static void sources_came(const jval *answer, void *user) {
   if ((intptr_t)user != gen || !list.open || view != VIEW_SOURCES) return;
   const jval *items = json_get(answer, "items");
+  int done = !answer || json_bool(json_get(answer, "done"), 0), keep = list.at;
   menu_begin(&list, tx("sources"));
   for (int i = 0; i < json_len(items) && i < MENU_MAX; i++) {
     const jval *it = json_at(items, i);
@@ -639,6 +730,10 @@ static void sources_came(const jval *answer, void *user) {
     source_seqs[i] = (int)json_num(json_get(it, "seq"), 0);
     menu_add(&list, row, 0, i);
   }
+  if (!done) menu_add(&list, txp("readingTracks", NULL), 0, ROW_WAIT);
+  else if (!list.n) menu_add(&list, txp("none", NULL), 0, ROW_WAIT);
+  list.at = keep < list.n ? keep : 0;
+  if (!done) sources_ask((int)json_num(json_get(answer, "version"), 0));
 }
 
 static void ask_list(int which, const char *path, api_done done) {
@@ -680,16 +775,15 @@ static void choose(int id) {
     report("seek");
   }
   if (view == VIEW_SUBS && id >= LANGUAGE_ROW) {
-    /* a language with one subtitle is that subtitle; otherwise its list */
     sub_language_at = id - LANGUAGE_ROW;
-    int only = -1, count = 0;
-    for (int i = 0; i < subs_count(); i++)
-      if (sub_language_of(i) == sub_language_at) only = i, count++;
-    if (count != 1) return open_view(VIEW_SUBS_LANGUAGE);
-    id = only;
+    return open_view(VIEW_SUBS_LANGUAGE);
+  }
+  if (view == VIEW_SUBS_LANGUAGE && id >= ADDON_ROW) {
+    sub_addon_at = id - ADDON_ROW;
+    return open_view(VIEW_SUBS_ADDON);
   }
   if (view == VIEW_AUDIO) player_select_audio(id);
-  else if (view == VIEW_SUBS || view == VIEW_SUBS_LANGUAGE) subs_choose(id), subs_remember(id);
+  else if (view == VIEW_SUBS || view == VIEW_SUBS_LANGUAGE || view == VIEW_SUBS_ADDON) subs_choose(id), subs_remember(id);
   else if (view == VIEW_EPISODES && episode_ids[id] && strcmp(episode_ids[id], info.vid ? info.vid : "")) {
     char *type = str_dup(info.type), *title = str_dup(info.id), *episode = str_dup(episode_ids[id]);
     leave();
@@ -755,7 +849,10 @@ static void key(app_key k) {
   }
   if (list.open) {
     int id = menu_key(&list, k);
-    if (id != -1 && id != -2) choose(id);
+    /* Back in a subtitle language or addon goes up a level, elsewhere it closes the list */
+    if (id == -2 && view == VIEW_SUBS_ADDON) open_view(VIEW_SUBS_LANGUAGE);
+    else if (id == -2 && view == VIEW_SUBS_LANGUAGE) open_view(VIEW_SUBS);
+    else if (id != -1 && id != -2) choose(id);
     return;
   }
   /* the colour buttons of the remote: red subtitles, green audio, yellow skips an intro */
@@ -952,7 +1049,11 @@ static void draw_seek_amount(void) {
   text_draw(text, (SC_DESIGN_W - w) / 2, SC_DESIGN_H * 0.32f - 35, 60, W_EXTRABOLD, C_WHITE);
 }
 
-/* the line of the subtitle (#sub): centred, near the bottom, white with a shadow */
+/* the line of the subtitle (#sub): centred, near the bottom, drawn as Nuvio's TV app does by default:
+   regular letters with a solid outline all around (3.5% of the size, 2 px at the usual 57 px), drawn
+   at sixteen points around the line, no shadow */
+#define SUB_OUTLINE_POINTS 16
+#define SUB_OUTLINE_RATIO 0.035f
 static void draw_subtitle(void) {
   const char *text = subs_text(player_position());
   if (!text) return;
@@ -988,9 +1089,11 @@ static void draw_subtitle(void) {
     float w = text_width(lines[i], size, W_REGULAR), x = w < max_w ? (SC_DESIGN_W - w) / 2 : SC_DESIGN_W * 0.06f;
     if (sub_background > 0)
       gfx_rect(x - 14, y, (w < max_w ? w : max_w) + 28, lh, 6, SC_RGBA(0, 0, 0, (int)(255 * sub_background)));
-    /* the outline: the line drawn around itself in the outline colour */
-    static const float around[8][2] = {{-2, 0}, {2, 0}, {0, -2}, {0, 2}, {-2, -2}, {2, 2}, {-2, 2}, {2, -2}};
-    for (int o = 0; o < 8; o++) text_draw_fit(lines[i], x + around[o][0], y + around[o][1], max_w, size, W_REGULAR, sub_outline);
+    float r = size * SUB_OUTLINE_RATIO < 1 ? 1 : size * SUB_OUTLINE_RATIO;
+    for (int o = 0; o < SUB_OUTLINE_POINTS; o++) {
+      float a = o * 6.2832f / SUB_OUTLINE_POINTS;
+      text_draw_fit(lines[i], x + r * cosf(a), y + r * sinf(a), max_w, size, W_REGULAR, sub_outline);
+    }
     text_draw_fit(lines[i], x, y, max_w, size, W_REGULAR, player_hdr() ? dim(sub_color) : sub_color);
   }
 }
