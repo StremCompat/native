@@ -165,6 +165,12 @@ static void frame(double t, float dt) {
   if (waited > 8000)
     centred(T("Na primeira abertura depois de instalar, isso pode levar alguns segundos.", "The first launch after installing can take a few seconds."),
             y + 40, 26, 16, W_REGULAR, C_TEXT(0.34f));
+  /* a long wait says where it stands, so a photo of the screen tells what is holding it up */
+  if (waited > 20000) {
+    char status[300];
+    snprintf(status, sizeof status, "%s \xC2\xB7 %s", platform_server_status(), server_note);
+    centred(status, y + 80, 24, 15, W_REGULAR, C_TEXT(0.3f));
+  }
 }
 
 /* the pointer: a click on Try again */
