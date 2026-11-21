@@ -200,7 +200,7 @@ static void key(app_key k) {
     else if (k == K_MENU && row && row->n) card_menu_open(&row->items[row->col], 0);
     else if (k == K_OK && row && row->n) {
       run(0); /* remembered once a result is opened */
-      title_open(row->items[row->col].type, row->items[row->col].id);
+      title_open_card(&row->items[row->col]);
     }
   }
 }

@@ -67,7 +67,7 @@ static void key(app_key k) {
   else if (k == K_RIGHT && d && d->col < d->n - 1) d->col++;
   else if (k == K_LEFT && d && d->col > 0) d->col--;
   else if (k == K_LEFT) nav_focus(NAV_CALENDAR);
-  else if (k == K_OK && d && d->n) title_open(d->items[d->col].type, d->items[d->col].id);
+  else if (k == K_OK && d && d->n) title_open_card(&d->items[d->col]);
   else if (k == K_MENU && d && d->n) card_menu_open(&d->items[d->col], 0);
 }
 

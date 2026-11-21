@@ -110,6 +110,8 @@ function withEpisodes(t) {
         title: 'Chapter ' + (s * 8 + e),
         overview: 'What happens in episode ' + e + ' of season ' + (s + 1) + ', in one or two sentences.',
         thumbnail: base + '/backdrop/' + (s * 8 + e) + '.png',
+        /* IMDb's rating, as Cinemeta gives it; the third episode has none */
+        rating: e === 3 ? undefined : (7 + (e % 4) * 0.6).toFixed(1),
         released: new Date(start + (s * 8 + e) * 7 * day).toISOString()
       });
   });

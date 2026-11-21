@@ -84,7 +84,7 @@ static void choose(int chosen) {
   if (chosen < 0) return;
   app_back();
   switch (chosen) {
-  case A_OPEN: title_open(it.type, it.id); break;
+  case A_OPEN: title_open_card(&it); break;
   case A_SIMILAR: similar_open(it.type, it.id); break;
   case A_TRAILER: player_play_trailer(it.type, it.id); break;
   case A_WATCHED: send("watched", 1); break;

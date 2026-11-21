@@ -56,7 +56,7 @@ static void key(app_key k) {
   else if (k == K_RIGHT && at % COLS < COLS - 1 && at < count - 1) at++;
   else if (k == K_DOWN && at + COLS < count) at += COLS;
   else if (k == K_UP && at >= COLS) at -= COLS;
-  else if (k == K_OK && at < count) title_open(items[at].type, items[at].id);
+  else if (k == K_OK && at < count) title_open_card(&items[at]);
   else if (k == K_MENU && at < count) card_menu_open(&items[at], 0);
 }
 

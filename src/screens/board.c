@@ -421,7 +421,7 @@ static void key(app_key k) {
     else if (k == K_LEFT && B->featured_at > 0) B->featured_at--;
     else if (k == K_LEFT) nav_focus(B->section);
     else if (k == K_DOWN) B->top = !first_row();
-    else if (k == K_OK) title_open(hero_card()->type, hero_card()->id);
+    else if (k == K_OK) title_open_card(hero_card());
     B->featured_since = B->clock_now;
     return;
   }
@@ -434,7 +434,7 @@ static void key(app_key k) {
   else if (k == K_OK && focused_card() && focused_card()->type && !strcmp(focused_card()->type, "folder"))
     folder_open(focused_card()->id);
   else if (k == K_OK && focused_card() && focused_card()->id && focused_card()->type)
-    title_open(focused_card()->type, focused_card()->id);
+    title_open_card(focused_card());
   else if (k == K_MENU && focused_card() && focused_card()->id && strcmp(focused_card()->type ? focused_card()->type : "", "folder"))
     card_menu_open(focused_card(), focused_card()->cw);
   else if (k == K_BACK) {

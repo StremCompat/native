@@ -489,6 +489,8 @@ static void move_button(int dir) {
 /* rows that are not a choice: the "off" of the subtitles, and the wait while a list comes */
 #define ROW_WAIT -100
 #define ROW_OFF -101
+/* the delay, also offered in the subtitles list once one is shown (it was only in the settings) */
+#define ROW_DELAY -102
 
 /* a track's language by name, as the media service and the addons give only its code */
 static const char *language_name(const char *code) {
@@ -657,6 +659,11 @@ static void open_view(int which) {
       snprintf(row, sizeof row, "%s  \xC2\xB7  %d \xE2\x80\xBA", language_name(sub_languages[g]), count);
       menu_add(&list, row, on, LANGUAGE_ROW + g);
     }
+    if (subs_current() >= 0) {
+      char row[64];
+      snprintf(row, sizeof row, "%s: %+.1fs \xE2\x80\xBA", txp("delay", NULL), subs_delay());
+      menu_add(&list, row, 0, ROW_DELAY);
+    }
   } else if (which == VIEW_SUBS_LANGUAGE) {
     menu_begin(&list, language_name(sub_languages[sub_language_at]));
     list_sub_groups();
@@ -756,6 +763,10 @@ static void ask_list(int which, const char *path, api_done done) {
 }
 
 static void choose(int id) {
+  if (id == ROW_DELAY) {
+    open_view(VIEW_DELAY);
+    return;
+  }
   if (id == ROW_WAIT || id == ROW_OFF) {
     if (id == ROW_OFF) subs_choose(-1), subs_remember(-1);
     list.open = 0;

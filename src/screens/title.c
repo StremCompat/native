@@ -30,7 +30,7 @@ typedef struct {
 } action;
 
 typedef struct {
-  char *id, *title, *title_overall, *line, *description, *thumbnail, *badge, *date;
+  char *id, *title, *title_overall, *line, *description, *thumbnail, *badge, *date, *rating;
   int absolute, own_thumbnail, watched, blur;
   float progress;
 } episode;
@@ -83,7 +83,8 @@ static void clear(void) {
   for (int s = 0; s < nseasons; s++) {
     for (int e = 0; e < seasons[s].n; e++) {
       episode *ep = &seasons[s].eps[e];
-      char **ef[] = {&ep->id, &ep->title, &ep->title_overall, &ep->line, &ep->description, &ep->thumbnail, &ep->badge, &ep->date};
+      char **ef[] = {&ep->id,          &ep->title,     &ep->title_overall, &ep->line,  &ep->description,
+                     &ep->thumbnail, &ep->badge, &ep->date,          &ep->rating};
       for (size_t i = 0; i < sizeof ef / sizeof ef[0]; i++) free(*ef[i]);
     }
     free(seasons[s].eps);
@@ -171,6 +172,7 @@ static void read_page(const jval *t) {
       ep->thumbnail = copy(json_get(ev, "thumbnail"));
       ep->badge = copy(json_get(ev, "badge"));
       ep->date = copy(json_get(ev, "date"));
+      ep->rating = copy(json_get(ev, "rating"));
       ep->absolute = (int)json_num(json_get(ev, "absolute"), 0);
       ep->own_thumbnail = json_bool(json_get(ev, "ownThumbnail"), 0);
       ep->watched = json_bool(json_get(ev, "watched"), 0);
@@ -182,6 +184,17 @@ static void read_page(const jval *t) {
   for (int s = 0, i = 0; s < nseasons; s++)
     for (int e = 0; seasons[s].number && e < seasons[s].n; e++) linear[i++] = &seasons[s].eps[e];
   select_episode(json_str(json_get(json_get(t, "series"), "landing"), NULL));
+}
+
+/* What the card knows, shown while the page is asked for: the name (or logo), the picture behind
+   and the synopsis, as Stremio and Nuvio open a title at once instead of an empty page. */
+void title_open_card(const card *c) {
+  title_open(c->type, c->id);
+  name = c->name ? str_dup(c->name) : NULL;
+  logo = c->logo ? str_dup(c->logo) : NULL;
+  description = c->description ? str_dup(c->description) : NULL;
+  background = c->backdrop ? str_dup(c->backdrop) : NULL;
+  backdrop_set(&bg, background);
 }
 
 static void answered(const jval *answer, void *user) {
@@ -545,6 +558,15 @@ static void draw_episode(const episode *ep, float x, float y, int focused) {
     gfx_rect(x + 10, y + EP_THUMB_H - 26 - 32, dw, 32, 7, SC_RGBA(0, 0, 0, 153));
     ui_line(ep->date, x + 21, y + EP_THUMB_H - 26 - 32, 32, 18, W_REGULAR, C_WHITE);
   }
+  /* its rating at the bottom right, as the web's .eprating: the number, then IMDb's yellow mark */
+  if (ep->rating) {
+    float nw = text_width(ep->rating, 18, W_BOLD), mw = text_width("IMDb", 13, W_EXTRABOLD) + 8, cw = 11 + nw + 7 + mw + 9;
+    float cx = x + EP_W - 10 - cw, cy = y + EP_THUMB_H - 26 - 32;
+    gfx_rect(cx, cy, cw, 32, 7, SC_RGBA(0, 0, 0, 153));
+    ui_line(ep->rating, cx + 11, cy, 32, 18, W_BOLD, C_WHITE);
+    gfx_rect(cx + 11 + nw + 7, cy + 7, mw, 18, 3, SC_RGBA(245, 197, 24, 255));
+    ui_line("IMDb", cx + 11 + nw + 11, cy + 7, 18, 13, W_EXTRABOLD, SC_RGBA(17, 17, 17, 255));
+  }
   if (ep->progress > 0) {
     gfx_rect(x + 14, y + EP_THUMB_H - 18, EP_W - 28, 6, 3, C_TEXT(0.28f));
     gfx_rect(x + 14, y + EP_THUMB_H - 18, (EP_W - 28) * clampf(ep->progress, 0, 1), 6, 3, C_WHITE);
@@ -608,6 +630,14 @@ static void frame(double t, float dt) {
       draw_controls(y);
       draw_episodes(y + 46 + 24, dt);
     }
+  } else if (name || logo) {
+    /* the card's name, picture and synopsis while the page comes (title_open_card); the line of
+       facts keeps its place, so the synopsis moves little when the rest arrives */
+    float y = TOP;
+    y += draw_name(y, 480, 150, 68) + 18;
+    y += 32 + 12 + 12;
+    float lh = 27 * 1.45f;
+    if (description) rolled_text(description, LEFT, y + (lh - text_line_height(27)) / 2, WIDTH * 0.6f, 27, C_TEXT(0.78f), 3, lh);
   }
   nav_draw(NAV_HOME, dt);
   if (jumping) {

@@ -93,7 +93,7 @@ static void key(app_key k) {
     if (before != tab_at) load_page(0);
     return;
   }
-  if (k == K_OK && at < nitems && items[at].id) title_open(items[at].type, items[at].id);
+  if (k == K_OK && at < nitems && items[at].id) title_open_card(&items[at]);
   else if (k == K_RIGHT && at < nitems - 1) at++;
   else if (k == K_LEFT && at % COLS) at--;
   else if (k == K_LEFT) nav_focus(NAV_HOME);
