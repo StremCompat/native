@@ -611,8 +611,10 @@ static void frame(double t, float dt) {
     float y = TOP;
     if (ep) {
       y += draw_name(y, 420, 116, 54) + 14;
-      text_draw_fit(ep->line ? ep->line : "", LEFT, y, WIDTH, 27, W_REGULAR, C_WHITE);
-      y += text_line_height(27) + 10;
+      /* the episode's line, then its own rating as the title's line shows the title's */
+      float lh = text_line_height(27), lw = ui_line(ep->line, LEFT, y, lh, 27, W_REGULAR, C_WHITE);
+      if (ep->rating) ui_rating(ep->rating, LEFT + lw + 24, y, lh, 27, 17, C_WHITE);
+      y += lh + 10;
       rolled_text(ep->description ? ep->description : "", LEFT, y + (36 - text_line_height(24)) / 2, WIDTH * 0.8f, 24,
                   C_TEXT(0.72f), 2, 36);
       y += 72 + 24;
